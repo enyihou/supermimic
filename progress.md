@@ -50,6 +50,7 @@ Last updated: 2026-11-21
 - The first SSH server has approximately 33 GB free on its root filesystem. It can temporarily hold the compressed BONES-SEED archive, with limited remaining headroom.
 - gpu01 has approximately 16 GB used in the user's `/home` quota and a 200 GB per-user working limit for `/home` and `/public` under the server guide. The private durable checkpoint path under `/data` still requires an approved project location.
 - Created `/public/houey/supermimic-archive` on gpu01 with owner-only permissions as the interim private archive location.
+- Added owner-only `inputs`, `runs`, and `manifests` subdirectories under the interim archive path for the dataset, checkpoint backups, and audit metadata.
 
 ## Demo rebuild
 
