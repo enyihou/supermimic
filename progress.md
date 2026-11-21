@@ -33,6 +33,7 @@ Last updated: 2026-11-21
 
 - Adopted the workflow of keeping Hugging Face credentials on the user's local machine, transferring only the downloaded archive to gpu01, verifying its checksum, and staging it into `$LOCAL_SCRATCH` for training.
 - Recorded that the full archive must be present before submission so the job does not depend on a live network transfer.
+- Clarified the actual topology as phone -> local SSH server -> AIR. Hugging Face access belongs on the local SSH server, while AIR receives only the downloaded archive.
 
 ## Demo rebuild
 
