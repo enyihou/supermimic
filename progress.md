@@ -58,6 +58,12 @@ Last updated: 2026-11-21
 - The overnight run is still blocked on the private BONES-SEED `g1.tar.gz` archive being transferred and checksum-verified at `/public/houey/supermimic-archive/inputs/g1.tar.gz`.
 - A smoke run and throughput benchmark remain required before the full job. The full backup script still needs resumable, atomic publication and explicit completion markers.
 
+## Goal-agent handoff readiness
+
+- Confirmed the storage and source setup are ready for a controlled run.
+- The dataset staging job was stopped before download at the user's request. No partial archive remains on the local staging directory or AIR input directory.
+- The project is ready for a goal agent to continue from the preflight phase once the user explicitly starts it. The goal agent must still obtain the dataset archive, harden the backup flow, run smoke and throughput checks, then submit the full job.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.
