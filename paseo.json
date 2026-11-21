@@ -1,0 +1,14 @@
+{
+  "worktree": {
+    "servicePorts": {
+      "range": "5173-5173"
+    }
+  },
+  "scripts": {
+    "web": {
+      "type": "service",
+      "command": "npm run serve",
+      "port": 5173
+    }
+  }
+}

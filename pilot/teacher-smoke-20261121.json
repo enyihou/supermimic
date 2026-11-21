@@ -1,0 +1,102 @@
+{
+  "kind": "teacher_cuda_smoke",
+  "source_revision": "aaac8c2077c388dd2fcc29f03862029bebd9f6b1",
+  "torch": "2.8.0+cu126",
+  "gpu": "NVIDIA A800-SXM4-40GB",
+  "elapsed_s": 73.69815622456372,
+  "peak_torch_memory_bytes": 86669824,
+  "summary": {
+    "nominal": {
+      "n": 2,
+      "error_m_s": 0.16488825529813766,
+      "failures": 0,
+      "recovered": 2
+    },
+    "disturbed": {
+      "n": 4,
+      "error_m_s": 0.5461516045033932,
+      "failures": 0,
+      "recovered": 2
+    }
+  },
+  "scenarios": [
+    {
+      "clip": "walk1_subject1",
+      "phase": 0.48,
+      "kick_x": 0,
+      "kick_y": 0,
+      "pushed": false,
+      "frame": 6204,
+      "error_m_s": 0.18083345890045166,
+      "tail_error_m": 0.09541885554790497,
+      "failed": false,
+      "first_failure_step": -1,
+      "recovered": true
+    },
+    {
+      "clip": "walk1_subject1",
+      "phase": 0.48,
+      "kick_x": 0,
+      "kick_y": 0.45,
+      "pushed": true,
+      "frame": 6204,
+      "error_m_s": 0.15114222466945648,
+      "tail_error_m": 0.08350837230682373,
+      "failed": false,
+      "first_failure_step": -1,
+      "recovered": true
+    },
+    {
+      "clip": "walk1_subject1",
+      "phase": 0.48,
+      "kick_x": 0,
+      "kick_y": -0.45,
+      "pushed": true,
+      "frame": 6204,
+      "error_m_s": 0.8506426811218262,
+      "tail_error_m": 0.644293487071991,
+      "failed": false,
+      "first_failure_step": -1,
+      "recovered": false
+    },
+    {
+      "clip": "run1_subject2",
+      "phase": 0.48,
+      "kick_x": 0,
+      "kick_y": 0,
+      "pushed": false,
+      "frame": 5640,
+      "error_m_s": 0.14894305169582367,
+      "tail_error_m": 0.06611254066228867,
+      "failed": false,
+      "first_failure_step": -1,
+      "recovered": true
+    },
+    {
+      "clip": "run1_subject2",
+      "phase": 0.48,
+      "kick_x": 0,
+      "kick_y": 0.45,
+      "pushed": true,
+      "frame": 5640,
+      "error_m_s": 0.5273030400276184,
+      "tail_error_m": 0.23412983119487762,
+      "failed": false,
+      "first_failure_step": -1,
+      "recovered": true
+    },
+    {
+      "clip": "run1_subject2",
+      "phase": 0.48,
+      "kick_x": 0,
+      "kick_y": -0.45,
+      "pushed": true,
+      "frame": 5640,
+      "error_m_s": 0.6555184721946716,
+      "tail_error_m": 0.42210912704467773,
+      "failed": false,
+      "first_failure_step": -1,
+      "recovered": false
+    }
+  ]
+}

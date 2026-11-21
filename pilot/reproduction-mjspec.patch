@@ -1,0 +1,14 @@
+diff --git a/src/tasks/supermimic/env_cfg.py b/src/tasks/supermimic/env_cfg.py
+--- a/src/tasks/supermimic/env_cfg.py
++++ b/src/tasks/supermimic/env_cfg.py
+@@ -37,7 +37,9 @@ def make_env_cfg(config: FoundationConfig) -> ManagerBasedRlEnvCfg:
+   if not config.randomization:
+     com = {i: (0.0, 0.0) for i in range(3)}
+   robot_cfg = get_supermimic_robot_cfg(config.robot)
+-  joint_names = [j.name for j in robot_cfg.spec_fn().joints]
++  # MjSpec owns the joint elements; keep it alive while reading their names.
++  robot_spec = robot_cfg.spec_fn()
++  joint_names = [j.name for j in robot_spec.joints]
+   return ManagerBasedRlEnvCfg(
+     seed=config.seed,
+     scene=SceneCfg(
