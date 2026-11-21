@@ -40,6 +40,11 @@ Last updated: 2026-11-21
 - Verified that gpu01 `/home` and `/public` are local XFS filesystems. The archive can be transferred there, hashed, and staged to `$LOCAL_SCRATCH` by the batch job.
 - Verified that `/data/houey` is absent. A private approved project path is still required for checkpoint and audit backups.
 
+## Checkpoint storage decision
+
+- Confirmed from the official runner that checkpoints are separate world-model, actor, and optional critic files. Comparable public runs range from roughly 69 MB to 223 MB per combined checkpoint.
+- Recorded the policy of keeping periodic checkpoints in private artifact storage and publishing only manifests, checksums, graphs, and a selected browser export to GitHub.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.

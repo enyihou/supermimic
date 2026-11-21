@@ -39,3 +39,10 @@
 - The user's access topology is phone -> local SSH server -> AIR. The local SSH server is the download host when it has outbound HTTPS access. The AIR host has no outbound Hugging Face access.
 - A live upload or network-mounted dataset during training would add an avoidable failure mode. The archive should be fully staged before the job is submitted.
 - AIR verification shows `/home` and `/public` on gpu01 are local XFS filesystems suitable for staging the compressed input before submission. The personal `/data/houey` path is absent, so checkpoint backups need an approved existing project path under `/data`.
+
+## Checkpoint artifact sizing
+
+- The official runner writes `world_model.pt`, `actor.pt`, and an optional `critic.pt` at each save interval. It may also export ONNX policy files for small motion libraries.
+- Exact official sizes are not known until the first checkpoint is produced. Comparable public SuperMimic releases report approximately 69 MB for a stripped 24k checkpoint, 71 MB for a 10k policy/world-model checkpoint, and 223 MB for a 100k checkpoint.
+- GitHub enforces a 100 MiB limit for a regular Git object and recommends external storage for generated binaries. A 223 MB checkpoint would require Git LFS or a release asset, and retaining hundreds of periodic checkpoints would make the repository unnecessarily large.
+- The working policy is to keep every resumable checkpoint in private artifact storage, publish a manifest and checksums to GitHub, and publish only a browser export or selected release artifact after licensing and size checks.
