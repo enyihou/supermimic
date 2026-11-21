@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "phase": "dataset_preflight",
-  "status": "local_verified_air_transfer_pending",
+  "status": "local_and_air_verified",
   "updated_utc": "2026-11-21",
   "source_commits": {
     "supermimic": "5fb92297ab4fe3d86629d9f0c635334791bb0d5f",
@@ -17,6 +17,6 @@
     "csv_files": 142220,
     "local_sha256_verified": true,
     "local_archive_members_verified": true,
-    "air_sha256_verified": false
+    "air_sha256_verified": true
   }
 }

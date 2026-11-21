@@ -1,55 +1,55 @@
 {
-  "schemaVersion": 1,
-  "updatedAt": "2026-11-21",
-  "summary": "The pinned recipe and checkpoint tools are ready. Training has not started; it requires private storage accessible to the training jobs.",
-  "training": {
-    "numEnvironments": 4096,
-    "completedIterations": 0,
-    "targetIterations": 320000
-  },
   "phases": [
     {
+      "detail": "Both upstream source revisions are pinned and verified.",
       "id": "source",
       "label": "Pinned sources and launcher",
-      "state": "verified",
-      "detail": "Both source revisions were checked. Local checkpoint and resume tests passed."
+      "state": "verified"
     },
     {
+      "detail": "The local and AIR archive SHA-256 checks match. The local inventory verified 142,220 G1 CSVs.",
       "id": "data",
       "label": "Dataset preflight",
-      "state": "in-progress",
-      "detail": "The local archive hash and contents were verified: 142,220 G1 CSVs. The private AIR transfer and destination hash check are pending."
+      "state": "verified"
     },
     {
+      "detail": "The 64-clip smoke job requires approved private storage accessible from its allocation.",
       "id": "smoke",
       "label": "Official smoke",
-      "state": "blocked",
-      "detail": "The job needs an approved private staging location it can access."
+      "state": "waiting"
     },
     {
+      "detail": "Measure iteration rate and checkpoint size at the planned training scale.",
       "id": "benchmark",
       "label": "Throughput and checkpoint size",
-      "state": "waiting",
-      "detail": "Measure iteration rate and checkpoint size at the planned training scale."
+      "state": "waiting"
     },
     {
+      "detail": "Full training follows a verified smoke test and benchmark.",
       "id": "train",
       "label": "Single-GPU training",
-      "state": "waiting",
-      "detail": "Full training follows a verified smoke test and benchmark."
+      "state": "waiting"
     },
     {
+      "detail": "No trained checkpoint has been evaluated on the separate LAFAN1 G1 suite.",
       "id": "evaluation",
       "label": "Held-out evaluation",
-      "state": "waiting",
-      "detail": "The separate evaluation suite is prepared. No trained checkpoint has been evaluated."
+      "state": "waiting"
     },
     {
+      "detail": "Release requires an audited checkpoint and verified browser export.",
       "id": "release",
       "label": "Browser model release",
-      "state": "waiting",
-      "detail": "Release requires an audited checkpoint and a verified browser export."
+      "state": "waiting"
     }
   ],
-  "series": []
+  "schemaVersion": 1,
+  "series": [],
+  "summary": "The BONES-SEED G1 archive is checksum-verified on AIR. No training phase is verified yet.",
+  "training": {
+    "completedIterations": 0,
+    "numEnvironments": 4096,
+    "targetIterations": 320000
+  },
+  "updatedAt": "2026-11-21"
 }
