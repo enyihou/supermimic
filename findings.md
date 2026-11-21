@@ -25,6 +25,7 @@
 - The official-smoke resource check also passed, with no allocation. The phase audits now record and cross-check the private selection digest and exact-versus-approximate cohort designation. Local tests cover both modes and verification failure paths. The Pages build now checks training/eval identity and runs browser-runtime artifact checks before any nonempty model release.
 - The CoRL submission is OpenReview `psNqjklVOK`; the forum shows a verification challenge and both unauthenticated notes endpoints returned HTTP 403. Its supplementary attachments could not be verified. Do not infer from this that no attachment exists.
 - The upload destination remained a private partial at 19:53 UTC. Both the deployment review and the local gate tests confirmed that the checked-in status must be regenerated from phase evidence before deploying the new gate.
+- `training/stage_g1.sh` had a here-document/case-branch syntax edge that ran the remote checksum and atomic rename successfully but returned shell status 2 afterward. The destination was independently verified final with the pinned digest. The post-copy remote command is now isolated in a function and `bash -n` passes. An idempotent rerun still performs the intended full remote hash, so it may take several minutes on the 23.5 GB archive.
 
 ## Overnight run planning audit
 

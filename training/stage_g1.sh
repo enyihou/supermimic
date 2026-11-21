@@ -58,14 +58,11 @@ if (( remaining < 0 )); then remaining=0; fi
 echo transfer
 REMOTE
 )
-case "$preflight" in
-  already-verified) ;;
-  transfer)
-    rsync --partial --inplace --chmod=F600 --times --info=progress2 \
-      -e 'ssh -o BatchMode=yes -o ConnectTimeout=20' -- \
-      "$archive" "air:$inputs/.g1.tar.gz.partial"
-    # shellcheck disable=SC2029
-    ssh "${ssh_options[@]}" air "bash -s -- '$inputs' '$sha' '$bytes'" <<'REMOTE'
+
+finalize_transfer() {
+  # Keep the here-document inside a function so the case dispatch cannot
+  # accidentally consume a malformed terminator as branch syntax.
+  ssh "${ssh_options[@]}" air "bash -s -- '$inputs' '$sha' '$bytes'" <<'REMOTE'
 set -euo pipefail
 umask 077
 cd "$1"
@@ -78,6 +75,15 @@ sync -d .g1.tar.gz.partial
 mv -nT -- .g1.tar.gz.partial g1.tar.gz
 [[ ! -e .g1.tar.gz.partial ]]
 REMOTE
+}
+
+case "$preflight" in
+  already-verified) ;;
+  transfer)
+    rsync --partial --inplace --chmod=F600 --times --info=progress2 \
+      -e 'ssh -o BatchMode=yes -o ConnectTimeout=20' -- \
+      "$archive" "air:$inputs/.g1.tar.gz.partial"
+    finalize_transfer
     ;;
   *) printf 'Unexpected AIR transfer preflight response\n' >&2; exit 4 ;;
 esac
