@@ -41,6 +41,7 @@
 - AIR verification shows `/home` and `/public` on gpu01 are local XFS filesystems suitable for staging the compressed input before submission. The personal `/data/houey` path is absent, so checkpoint backups need an approved existing project path under `/data`.
 - The first SSH server has a 145 GB root filesystem with about 33 GB free and about 51 GB used under `/home/ubuntu`. It can hold the roughly 23.5 GB compressed input temporarily, but leaves limited headroom for transfer staging and should not be the checkpoint archive.
 - gpu01 currently reports about 16 GB used in `/home/houey`. The server guide authorizes a 200 GB per-user working limit for `/home` and `/public`, so the compressed input and a bounded set of checkpoints fit there after a quota check. `$LOCAL_SCRATCH` remains job-temporary storage.
+- Created the owner-only interim archive directory `/public/houey/supermimic-archive` on gpu01. It is empty and writable. This is suitable for staged inputs, compressed checkpoints, logs, and audit outputs within the personal working limit while a durable `/data` project path is unavailable.
 
 ## Checkpoint artifact sizing
 
