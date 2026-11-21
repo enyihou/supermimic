@@ -95,6 +95,9 @@ package and run ID with `full resume`. Do not resume a live allocation.
 
 Monitor `squeue`, a concise training log tail, and published checkpoint
 manifests. Save the terminal Slurm record promptly; controller records age out.
+`python3 training/watch_slurm.py "$JOB_ID" "$PRIVATE_SLURM_JSON"` can be run
+detached on gpu01 to capture the exact job's terminal controller state
+before it expires. An observation timeout does not authorize a restart.
 Success requires a matching `COMPLETED`/`0:0` record, verified archive hashes,
 the exact target in the latest checkpoint, and the attempt's `SUCCESS` and
 `job-status.txt`. See [held-out evaluation and audits](HELD_OUT_EVAL.md) and
