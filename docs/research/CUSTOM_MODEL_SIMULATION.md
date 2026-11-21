@@ -38,4 +38,10 @@ exact training step, public artifact list and hashes, executable action parity,
 and scene compatibility. It does not replace the private export or Slurm audit
 records and does not authorize distribution of the package by itself.
 
+After reviewing the public-only source diff and pushing the exact source
+revision, publish Pages with `bash scripts/deploy-pages.sh "$SOURCE_COMMIT"`.
+It builds in a temporary directory, rechecks the published model assets,
+rejects unexpected assets and symlinks, and pushes a normal fast-forward
+commit to the separate Pages branch.
+
 For a local test independent of any training run, generate a temporary random actor ONNX against the pinned Python source with `python training/test_browser_export.py --fixture-dir "$FIXTURE"`, start Vite, and run `node scripts/test-browser-runtime.mjs http://127.0.0.1:5173/ "$FIXTURE"`. This tests inference parity, actual local MuJoCo stepping, mesh transfer, reset, and failure on altered hashes in Chromium. It is not a trained-model evaluation.
