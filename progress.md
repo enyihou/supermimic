@@ -52,6 +52,12 @@ Last updated: 2026-11-21
 - Created `/public/houey/supermimic-archive` on gpu01 with owner-only permissions as the interim private archive location.
 - Added owner-only `inputs`, `runs`, and `manifests` subdirectories under the interim archive path for the dataset, checkpoint backups, and audit metadata.
 
+## Overnight readiness check
+
+- Storage layout and private archive directories are ready on gpu01.
+- The overnight run is still blocked on the private BONES-SEED `g1.tar.gz` archive being transferred and checksum-verified at `/public/houey/supermimic-archive/inputs/g1.tar.gz`.
+- A smoke run and throughput benchmark remain required before the full job. The full backup script still needs resumable, atomic publication and explicit completion markers.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.
