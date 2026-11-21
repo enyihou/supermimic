@@ -30,4 +30,12 @@ The export contains `actor.onnx`, `scene.mjbpack`, `manifest.json`, and license/
 
 Verify the release in a private browser preview before publishing. Review the public bundle for only the allowlisted output and for license conditions. Publish it as `models/$MODEL_ID/` under the Vite base path, with the trained route pointing to its versioned `manifest.json`. Record browser configuration and evidence for desktop and mobile. The final policy must track the browser demo commands acceptably; test this on the actual trained weights, not just the synthetic fixture.
 
+Run `npm run verify:release` (also invoked by `npm run build`) before
+publishing the registry. An active release requires the checksum-verified
+dataset preflight and the attached held-out audit in
+`public/reproduction/full-audit.json`. The gate checks the release metadata,
+exact training step, public artifact list and hashes, executable action parity,
+and scene compatibility. It does not replace the private export or Slurm audit
+records and does not authorize distribution of the package by itself.
+
 For a local test independent of any training run, generate a temporary random actor ONNX against the pinned Python source with `python training/test_browser_export.py --fixture-dir "$FIXTURE"`, start Vite, and run `node scripts/test-browser-runtime.mjs http://127.0.0.1:5173/ "$FIXTURE"`. This tests inference parity, actual local MuJoCo stepping, mesh transfer, reset, and failure on altered hashes in Chromium. It is not a trained-model evaluation.

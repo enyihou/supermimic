@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/verify-release.mjs && tsc --noEmit && vite build",
+    "verify:release": "node scripts/verify-release.mjs",
     "preview": "vite preview",
     "serve": "node server.mjs"
   },
