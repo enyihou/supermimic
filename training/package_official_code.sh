@@ -26,7 +26,7 @@ printf 'supermimic=%s\nmjlab_research=%s\n' "$supermimic" "$mjlab" > "$build/pac
 printf '%s\n' "$revision" > "$build/package/REPRODUCTION_COMMIT.txt"
 
 for item in air_checkpoint.py air_launch.py air_runner.patch audit_official.py evaluate_heldout.py \
-  lafan1_g1_eval_manifest.tsv inspect_bones.py pack_bones.py; do
+  lafan1_g1_eval_manifest.tsv inspect_bones.py pack_bones.py select_bones_clips.py; do
   git -C "$here" show "$revision:training/$item" > "$build/package/training/$item"
 done
 git -C "$build/package/supermimic" apply --check "$build/package/training/air_runner.patch"

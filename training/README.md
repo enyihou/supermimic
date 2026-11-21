@@ -46,7 +46,11 @@ explicit transition boundary rather than claiming bitwise physics continuity.
    packed root pose/twist and joint arrays. Keep the list and packed motions
    private. The pins do not include the paper's exact 129,514-clip list; audit
    the actual filter, clip count and selection hash and do not claim exact
-   Appendix E parity without evidence.
+   Appendix E parity without evidence. A separately reviewed
+   [approximate selector](BONES_SELECTION.md) is available if the authors'
+   list cannot be obtained. For the bounded smoke, `prepare_air_smoke.sh`
+   verifies both input hashes, confirms the pinned loader can read the smoke
+   arrays on CPU, and atomically publishes a private compressed smoke package.
 5. On gpu01, package each packed-motion directory at the archive root
    (`tar -C "$PACKED_DIR" -czf "$MOTIONS_TGZ" .`) and compute SHA-256. Stage
    `environment.tar.gz`, `code.tar.gz` and `SHA256SUMS` together in a new
