@@ -3,7 +3,7 @@
 ## Overview
 
 - **Target file:** `src/components/SimulationStage.tsx`
-- **Screenshot:** `docs/design-references/official-demo-desktop-1440.png`
+- **Reference:** [official simulation](https://supermimic.github.io/demo/) (not mirrored)
 - **Interaction model:** time-driven simulation with pointer drag and orbit camera
 
 ## DOM and scene structure

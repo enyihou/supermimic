@@ -1,0 +1,24 @@
+# x86_64 AIR runtime for the pinned sources. Matches the author lock's direct
+# runtime dependencies except the R560-compatible Torch / Warp build variants.
+# Refresh the hash lock deliberately; do not regenerate it inside jobs.
+imageio-ffmpeg==0.6.0
+mediapy==1.2.7
+mjviser==0.0.17
+mujoco-core[rendering]==4.0.1
+mujoco-warp==4.0.1
+numpy==2.4.2
+onnxscript==0.6.1
+prettytable==3.17.0
+rsl-rl-lib==5.5.2
+ruff==0.15.0
+scipy==1.17.0
+tensorboard==2.20.0
+tensordict==0.11.0
+torch @ https://download.pytorch.org/whl/cu126/torch-2.14.1%2Bcu126-cp313-cp313-manylinux_2_28_x86_64.whl
+torchrunx==0.3.4
+tqdm==4.67.3
+trimesh==4.11.1
+tyro==1.0.6
+viser==1.1.1
+wandb==0.24.2
+warp-lang @ https://github.com/NVIDIA/warp/releases/download/v1.19.0/warp_lang-1.19.0+cu12-py3-none-manylinux_2_28_x86_64.whl

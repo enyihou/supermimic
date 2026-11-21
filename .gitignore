@@ -5,3 +5,10 @@ dist/
 .env.*
 qa-artifacts/
 graphify-out/
+__pycache__/
+/progress.md
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.tar.gz

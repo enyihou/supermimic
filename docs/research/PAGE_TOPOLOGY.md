@@ -1,6 +1,13 @@
 # Page topology
 
-The default Vite route embeds the locally hosted official demo runtime so the published WebGL model and worker behavior remain available offline. The fresh React implementation is available at `/?native=1` with matching topology and controls.
+The default Vite route is the reproduction progress report. `?view=official`
+links to the authors' reference simulation at its official host.
+`?view=trained` reads `models/releases.json`, then loads the active audited
+export with browser-only ONNX and MuJoCo workers. An empty registry explicitly
+shows that no model has been released.
+
+The independent, procedural illustration at `?native=1` is optional and does
+not run policy inference, MuJoCo, or any copied demo assets:
 
 1. **WebGL stage**
    - Fixed full-viewport canvas with transparent renderer.

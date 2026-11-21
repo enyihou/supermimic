@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-21",
+  "summary": "The pinned recipe and checkpoint tools are ready. Training has not started; it requires private storage accessible to the training jobs.",
+  "training": {
+    "numEnvironments": 4096,
+    "completedIterations": 0,
+    "targetIterations": 320000
+  },
+  "phases": [
+    {
+      "id": "source",
+      "label": "Pinned sources and launcher",
+      "state": "verified",
+      "detail": "Both source revisions were checked. Local checkpoint and resume tests passed."
+    },
+    {
+      "id": "data",
+      "label": "Dataset preflight",
+      "state": "in-progress",
+      "detail": "The local archive hash and contents were verified: 142,220 G1 CSVs. The private AIR transfer and destination hash check are pending."
+    },
+    {
+      "id": "smoke",
+      "label": "Official smoke",
+      "state": "blocked",
+      "detail": "The job needs an approved private staging location it can access."
+    },
+    {
+      "id": "benchmark",
+      "label": "Throughput and checkpoint size",
+      "state": "waiting",
+      "detail": "Measure iteration rate and checkpoint size at the planned training scale."
+    },
+    {
+      "id": "train",
+      "label": "Single-GPU training",
+      "state": "waiting",
+      "detail": "Full training follows a verified smoke test and benchmark."
+    },
+    {
+      "id": "evaluation",
+      "label": "Held-out evaluation",
+      "state": "waiting",
+      "detail": "The separate evaluation suite is prepared. No trained checkpoint has been evaluated."
+    },
+    {
+      "id": "release",
+      "label": "Browser model release",
+      "state": "waiting",
+      "detail": "Release requires an audited checkpoint and a verified browser export."
+    }
+  ],
+  "series": []
+}

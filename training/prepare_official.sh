@@ -29,8 +29,5 @@ if [[ ! -f "$work_root/supermimic/pyproject.toml" || ! -f "$work_root/mjlab_rese
   exit 1
 fi
 
-pushd "$work_root/supermimic" >/dev/null
-uv sync --python 3.13
-popd >/dev/null
 printf 'supermimic=%s\nmjlab_research=%s\n' "$supermimic_commit" "$mjlab_commit" > "$work_root/PINS.txt"
-printf 'Prepared %s\n' "$work_root"
+printf 'Prepared pinned source checkouts in %s (no runtime installed).\n' "$work_root"

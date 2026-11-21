@@ -3,7 +3,7 @@
 ## Overview
 
 - **Target file:** `src/components/ControlChrome.tsx`
-- **Screenshot:** `docs/design-references/official-demo-desktop-1440.png` and `official-demo-mobile-390.png`
+- **Reference:** [official simulation](https://supermimic.github.io/demo/) (not mirrored)
 - **Interaction model:** click-driven, keyboard-driven, and responsive sheet-driven
 
 ## Exact visual tokens

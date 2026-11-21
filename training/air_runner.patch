@@ -1,0 +1,152 @@
+diff --git a/src/supermimic/runners/supermimic_runner.py b/src/supermimic/runners/supermimic_runner.py
+index 82aef5a..cfd1951 100644
+--- a/src/supermimic/runners/supermimic_runner.py
++++ b/src/supermimic/runners/supermimic_runner.py
+@@ -1,7 +1,6 @@
+ from __future__ import annotations
+ 
+ import time
+-from concurrent.futures import Future, ThreadPoolExecutor
+ from dataclasses import asdict, dataclass, field
+ from datetime import datetime
+ from pathlib import Path
+@@ -23,7 +22,7 @@ from supermimic.learners.wm_learner import WorldModelLearner, WorldModelLearnerC
+ from supermimic.models import Dynamics, MultiEncoderAE, build_mlp
+ from supermimic.replay_buffer import FieldSpec, ReplayBuffer
+ from supermimic.representations import StateRepresentation, create_representation
+-from supermimic.runners.exporter import export_actor_as_onnx
++from supermimic.runners.air_checkpoint import CheckpointManager
+ from supermimic.runners.reset_sampling import ReturnSampler, ReturnSamplerCfg
+ from supermimic.sim_context import SimContext
+ from supermimic.tasks.task_spec import (
+@@ -36,7 +35,7 @@ from supermimic.utils.helpers import (
+   unpack_obs_dims,
+ )
+ from supermimic.utils.logger import Logger
+-from supermimic.utils.wandb_artifacts import download_model_dir, log_model_artifact
++from supermimic.utils.wandb_artifacts import download_model_dir
+ 
+ if TYPE_CHECKING:
+   from mjlab.rl import RslRlVecEnvWrapper
+@@ -573,13 +572,9 @@ class SuperMimicRunner:
+ 
+   def run(self) -> None:
+     log_dir = self._create_log_dir()
++    checkpoint = CheckpointManager(self)
+     self._init_wandb(log_dir)
+ 
+-    self.env.reset()
+-    self._seed_sim_history()
+-
+-    print(f"[INFO] Starting training loop for {self.cfg.max_iterations} iterations...")
+-
+     should_train = Ratio(
+       self.env.num_envs
+       / self.cfg.wm.num_batches
+@@ -588,16 +583,22 @@ class SuperMimicRunner:
+       * self.cfg.replay_ratio
+     )
+ 
++    completed = checkpoint.restore(should_train)
++    self.env.reset()
++    self._seed_sim_history()
++    checkpoint.begin()
++    print(f"[INFO] Training from {completed} to {self.cfg.max_iterations} completed iterations")
++
+     num_collected_steps = 0
+     start_time = time.time()
+     wm_learn_time = 0.0
+     policy_learn_time = 0.0
+     loss_dict: dict[str, torch.Tensor] = {}
+-    log_count = 0
+-    uploader = ThreadPoolExecutor(max_workers=1)
+-    upload: Future | None = None
++    log_count = (completed + self.cfg.log_interval - 1) // self.cfg.log_interval
+ 
+-    for step in range(self.cfg.max_iterations):
++    for step in range(completed, self.cfg.max_iterations):
++      if checkpoint.stop_requested:
++        break
+       num_collected_steps += self.step()
+ 
+       for _ in range(should_train(step)):
+@@ -631,7 +632,7 @@ class SuperMimicRunner:
+         total_train_time = wm_learn_time + policy_learn_time
+         collect_time = elapsed_time - total_train_time
+ 
+-        self.logger.log(
++        row = self.logger.log(
+           it=log_count,
+           total_it=self.cfg.max_iterations // self.cfg.log_interval,
+           collect_time=collect_time,
+@@ -640,6 +641,7 @@ class SuperMimicRunner:
+           loss_dict=loss_dict,
+           num_collected_steps=num_collected_steps,
+         )
++        checkpoint.log_metrics(step + 1, row)
+ 
+         log_count += 1
+         start_time = time.time()
+@@ -647,34 +649,15 @@ class SuperMimicRunner:
+         policy_learn_time = 0
+         num_collected_steps = 0
+ 
+-      if step % self.cfg.save_interval == 0:
+-        assert wandb.run is not None  # _init_wandb ran before the loop
+-        # The previous version must be logged before its files are overwritten.
+-        if upload is not None:
+-          upload.result()
+-        world_model_path = str(log_dir / "world_model.pt")
+-        actor_path = str(log_dir / "actor.pt")
+-        torch.save(self._wm.bundle(), world_model_path)
+-        torch.save(self.policy_learner.actor.state_dict(), actor_path)
+-        checkpoint_files = [world_model_path, actor_path]
+-        critic = getattr(self.policy_learner, "critic", None)
+-        if critic is not None:
+-          critic_path = str(log_dir / "critic.pt")
+-          torch.save(critic.state_dict(), critic_path)
+-          checkpoint_files.append(critic_path)
+-        # Skip ONNX export on huge datasets.
+-        if (
+-          self._representation.actor_obs_mode == "proprio"
+-          and self.motion.time_step_total <= 15_000
+-        ):
+-          checkpoint_files += export_actor_as_onnx(
+-            actor=self.policy_learner.actor,
+-            env=self.env.unwrapped,
+-            path=str(log_dir),
+-            run_name=wandb.run.name,
+-            term_widths=self._representation.proprio_term_widths(self._num_actions),
+-          )
+-        upload = uploader.submit(log_model_artifact, checkpoint_files)
++      completed = step + 1
++      if completed % self.cfg.save_interval == 0 or completed == self.cfg.max_iterations:
++        checkpoint.save(completed, should_train)
+ 
+-    uploader.shutdown()
++    if completed and (
++      checkpoint.latest is None or checkpoint.latest["completed_iterations"] != completed
++    ):
++      checkpoint.save(completed, should_train)
+     self._cleanup()
++    checkpoint.finish(completed)
++    if completed != self.cfg.max_iterations:
++      raise SystemExit(75)
+diff --git a/src/supermimic/utils/logger.py b/src/supermimic/utils/logger.py
+index da55aeb..5d27298 100644
+--- a/src/supermimic/utils/logger.py
++++ b/src/supermimic/utils/logger.py
+@@ -154,7 +154,7 @@ class Logger:
+     num_collected_steps: int,
+     width: int = 80,
+     pad: int = 40,
+-  ) -> None:
++  ) -> dict[str, float]:
+     iteration_time = collect_time + wm_learn_time + policy_learn_time
+     self.tot_timesteps += num_collected_steps
+     self.tot_time += iteration_time
+@@ -194,3 +194,4 @@ class Logger:
+       )
+     )
+     self.ep_extras.clear()
++    return row

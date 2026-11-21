@@ -15,11 +15,7 @@ type SimulationStageProps = {
   onDragStart?: () => void
 }
 
-type RobotMeta = {
-  bodies?: Record<string, Array<{ pos: number[]; quat: number[]; rgba: number[]; vert_offset: number; num_verts: number; face_offset: number; num_faces: number }>>
-}
-
-type Rig = THREE.Group & { userData: { bodyGroups?: Record<string, THREE.Group>; fallback?: boolean } }
+type Rig = THREE.Group
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -29,7 +25,6 @@ function makeMaterial(color: THREE.ColorRepresentation, opacity = 1) {
 
 function makeFallbackRig(): Rig {
   const root = new THREE.Group() as Rig
-  root.userData.fallback = true
   root.position.y = 0.05
   const white = makeMaterial('#d7d7d8')
   const dark = makeMaterial('#242529')
@@ -77,38 +72,6 @@ function applyStyle(root: THREE.Object3D, color: THREE.ColorRepresentation, opac
     material.depthWrite = opacity >= 1
     object.material = material
   })
-}
-
-function buildOfficialRig(meta: RobotMeta, buffer: ArrayBuffer): Rig | null {
-  if (!meta.bodies) return null
-  const root = new THREE.Group() as Rig
-  root.rotation.x = -Math.PI / 2
-  const bodyGroups: Record<string, THREE.Group> = {}
-  for (const [name, meshes] of Object.entries(meta.bodies)) {
-    const body = new THREE.Group()
-    bodyGroups[name] = body
-    root.add(body)
-    for (const part of meshes) {
-      const position = new Float32Array(buffer, part.vert_offset, part.num_verts * 3)
-      const index = new Uint32Array(buffer, part.face_offset, part.num_faces * 3)
-      const geometry = new THREE.BufferGeometry()
-      geometry.setAttribute('position', new THREE.BufferAttribute(position, 3))
-      geometry.setIndex(new THREE.BufferAttribute(index, 1))
-      geometry.computeVertexNormals()
-      const rgba = part.rgba ?? [0.7, 0.7, 0.7, 1]
-      const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(rgba[0], rgba[1], rgba[2]), roughness: 0.5, metalness: 0.03, transparent: rgba[3] < 1, opacity: rgba[3] })
-      const mesh = new THREE.Mesh(geometry, material)
-      const pos = part.pos ?? [0, 0, 0]
-      mesh.position.set(pos[0], pos[1], pos[2])
-      const q = part.quat ?? [1, 0, 0, 0]
-      mesh.quaternion.set(q[1], q[2], q[3], q[0])
-      mesh.castShadow = true
-      mesh.receiveShadow = true
-      body.add(mesh)
-    }
-  }
-  root.userData.bodyGroups = bodyGroups
-  return root
 }
 
 function cloneRig(source: Rig, color: THREE.ColorRepresentation, opacity: number): Rig {
@@ -187,38 +150,10 @@ export default function SimulationStage({ playing, goal, mujoco, noise, selected
     const goalRig = new THREE.Group()
     const simRig = new THREE.Group()
     scene.add(world, goalRig, simRig)
-    let modelRoot: Rig = makeFallbackRig()
-    let worldRig: Rig = modelRoot
-    let goalReady = false
-    let simReady = false
+    const worldRig = makeFallbackRig()
     world.add(worldRig)
-
-    const setupModel = async () => {
-      try {
-        const [metaResponse, modelResponse] = await Promise.all([fetch('/model/robot.json'), fetch('/model/robot.bin')])
-        if (metaResponse.ok && modelResponse.ok) {
-          const official = buildOfficialRig(await metaResponse.json() as RobotMeta, await modelResponse.arrayBuffer())
-          if (official && !disposed) {
-            // The published mesh is hosted locally for reproducibility. The
-            // local fallback rig remains the visible presentation because the
-            // published pose stream is produced by its WASM worker.
-            official.visible = false
-            modelRoot = official
-          }
-        }
-      } catch (error) {
-        console.warn('Official robot mesh unavailable, using fallback rig.', error)
-        // The fallback keeps the simulation useful when the optional mesh files are unavailable.
-      }
-      if (disposed) return
-      const goalSource = cloneRig(worldRig, '#8e8e93', 0.22)
-      const simSource = cloneRig(worldRig, '#616267', 0.5)
-      goalRig.add(goalSource)
-      simRig.add(simSource)
-      goalReady = true
-      simReady = true
-    }
-    void setupModel()
+    goalRig.add(cloneRig(worldRig, '#8e8e93', 0.22))
+    simRig.add(cloneRig(worldRig, '#616267', 0.5))
 
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
@@ -296,35 +231,22 @@ export default function SimulationStage({ playing, goal, mujoco, noise, selected
       const swing = Math.sin(elapsed * 5.2 + motionPhase) * (0.08 + current.noise * 0.25)
       worldRig.position.y = 0.03 + Math.max(0, Math.sin(elapsed * 2.6 + motionPhase)) * 0.015
       worldRig.rotation.z = swing * 0.08
-      if (worldRig.userData.fallback) {
-        const limbs = worldRig.children.filter((child) => child instanceof THREE.Group)
-        limbs.forEach((limb, index) => {
-          const side = Number(limb.userData.side ?? (index % 2 ? 1 : -1))
-          const arm = Boolean(limb.userData.arm)
-          const base = Number(limb.userData.baseRotation ?? 0)
-          limb.rotation.z = base + swing * (arm ? 1 : 0.65) * side
-          limb.rotation.x = Math.sin(elapsed * 4 + index) * 0.03
-        })
-      } else {
-        const bodyGroups = worldRig.userData.bodyGroups ?? {}
-        for (const [name, body] of Object.entries(bodyGroups)) {
-          const side = name.includes('left') ? -1 : 1
-          if (name.includes('shoulder') || name.includes('hip')) body.rotation.z = swing * side
-          if (name.includes('elbow') || name.includes('knee')) body.rotation.x = Math.sin(elapsed * 4 + side) * 0.06
-        }
-      }
-      if (goalReady) {
-        goalRig.visible = current.goal
-        goalRig.position.copy(worldRig.position)
-        goalRig.position.y += 0.015
-        goalRig.rotation.z = -swing * 0.3
-      }
-      if (simReady) {
-        simRig.visible = current.mujoco
-        simRig.position.copy(worldRig.position)
-        simRig.position.x += current.mujoco ? 0.02 : 0
-        simRig.rotation.z = swing * 0.06
-      }
+      const limbs = worldRig.children.filter((child) => child instanceof THREE.Group)
+      limbs.forEach((limb, index) => {
+        const side = Number(limb.userData.side ?? (index % 2 ? 1 : -1))
+        const arm = Boolean(limb.userData.arm)
+        const base = Number(limb.userData.baseRotation ?? 0)
+        limb.rotation.z = base + swing * (arm ? 1 : 0.65) * side
+        limb.rotation.x = Math.sin(elapsed * 4 + index) * 0.03
+      })
+      goalRig.visible = current.goal
+      goalRig.position.copy(worldRig.position)
+      goalRig.position.y += 0.015
+      goalRig.rotation.z = -swing * 0.3
+      simRig.visible = current.mujoco
+      simRig.position.copy(worldRig.position)
+      simRig.position.x += current.mujoco ? 0.02 : 0
+      simRig.rotation.z = swing * 0.06
       shadow.position.x = worldRig.position.x
       shadow.position.z = worldRig.position.z
       shadow.scale.setScalar(0.9 + 0.6 * clamp(worldRig.position.y, 0, 1))

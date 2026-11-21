@@ -5,5 +5,6 @@ export default defineConfig({
   plugins: [react()],
   base: process.env.GITHUB_PAGES === '1' ? '/supermimic/' : '/',
   publicDir: 'public',
+  build: { license: { fileName: 'licenses/dependencies.md' } },
   server: { host: '0.0.0.0', port: 5173 },
 })

@@ -1,27 +1,33 @@
-# Custom SuperMimic simulation plan
+# Trained-model browser release
 
-The current website has two useful pieces for the planned trained-model demo.
+The trained simulation uses an independent MuJoCo WASM runtime and an actor-only ONNX export. The official reference stays at the [authors’ site](https://supermimic.github.io/demo/). The [official web demo license](https://supermimic.github.io/demo/LICENSE.html) is separate from the Apache-2.0 training repository and does not grant rights to mirror, modify, or redistribute the demo’s engine, weights, binary motions, or prepared robot assets. Do not use those assets for this release.
 
-- The default route embeds the locally hosted published SuperMimic runtime at `public/official-demo/`.
-- The `/?native=1` route is an independent React and Three.js stage. It already loads the local robot mesh from `public/model/robot.json` and `public/model/robot.bin`.
-- The `training/` launchers prepare the pinned SuperMimic repositories, run the official training entry point, and archive private checkpoints.
+## Pinned model contract
 
-The browser-facing custom simulation still needs a model export boundary. The training checkpoints are private PyTorch artifacts and are not automatically equivalent to the published browser `weights.bin` format. A trained run therefore needs an explicit export step that records the checkpoint revision, observation/action schema, robot asset revision, and a browser-readable inference package.
+The `SuperMimic-GenCoord-G1` launcher uses the pinned default `actor_obs=rep_state`, one frame of history, and the motion task. Its input is the 68-value `[height, body gravity, body linear velocity, body angular velocity, joint positions, joint velocities]` representation. Its 640-value goal contains ten `[reference joint positions, reference joint velocities]` frames followed by ten relative root rotations (the first two matrix columns, flattened by row); reference frames are five control steps apart. The 29 raw actor outputs map to PD position targets through per-joint `raw * scale + offset`. Joint order, action scales, offsets, timestep, and four substeps come from the pinned mjlab environment and saved model. No learned dynamics are used in this view: MuJoCo advances every state locally from the exported actor’s actions.
 
-## Intended website shape
+The pinned project’s built-in ONNX export is for a **proprioception** actor and embeds motion arrays in the motion graph. Neither that graph nor the published demo’s `weights.bin` is a substitute for this contract. The independent export uses only the motion goal encoder, state/goal normalizers, and action decoder from the audited checkpoint. Synthetic reference commands are generated in-browser and are not part of the held-out evaluation.
 
-1. Keep the published reference simulation as the `Official` view.
-2. Add a separate `Trained model` view or route that selects a versioned model manifest such as `/models/custom-v1/manifest.json`.
-3. Serve the custom model package with the same authenticated server path as the app. A static Pages deployment can gate the UI, but it cannot keep the model files private once their URLs are known.
-4. Use the native Three.js stage as the integration surface for the first custom view. It can load a versioned robot mesh and motion/reference data without changing the official iframe.
-5. Add an evaluation panel that reports the model version, checkpoint step, motion clip, and whether the displayed result is the reference or trained policy.
+## Publication boundary
 
-## Work still required after training
+The [BONES-SEED license](https://huggingface.co/datasets/bones-studio/seed/blob/main/LICENSE.md) distinguishes model results from raw data, restricts redistribution of raw or recoverable data, and requires model attribution. Training data includes Motion Data by [Bones Studio](https://bones.studio/). Use of the underlying dataset is subject to the BONES Motion Capture Dataset License Agreement. Confirm release authority under the accepted license before publishing the export. Do not publish `actor.pt`, whole train checkpoints, motion arrays, raw holdout reports, or an export that includes them. A Pages UI gate cannot make assets on Pages private.
 
-- Define and implement the checkpoint-to-browser export format.
-- Export one trained checkpoint and verify finite actions against the training-side observation schema.
-- Add a model registry and route selection in `src/App.tsx`.
-- Load the exported policy in a worker or WebAssembly runtime so rendering stays responsive.
-- Add a side-by-side or toggle comparison against the official runtime, then test desktop and mobile behavior.
+The release manifest is part of the model package, not a replacement for the Slurm, checkpoint, and held-out audit. It records model ID, source revisions, dataset SHA-256, checkpoint step, aggregate holdout metrics, and asset hashes. Browser inference must fail visibly on an absent, unsupported, corrupted, or parity-failing package; it must not show the official policy under a trained-model label.
 
-The current source branch is ready to receive that export and integration work. No trained checkpoint is present in this repository.
+## Export after the full-run audit
+
+Use the pinned Python environment and CPU. The input here is the audited private checkpoint directory, **not** a git checkout or public folder. Fill in checkpoint hashes and the reproduction commit from the run evidence, not the export machine’s current HEAD:
+
+```sh
+python training/export_browser_policy.py "$PRIVATE_CHECKPOINT" "$PRIVATE_EXPORT_DIR/$MODEL_ID" \
+  --model-id "$MODEL_ID" --checkpoint-step 320000 \
+  --expected-actor-sha256 "$ACTOR_SHA256" --expected-world-model-sha256 "$WORLD_MODEL_SHA256" \
+  --dataset-sha256 "$DATASET_SHA256" --reproduction-commit "$TRAINING_SOURCE_COMMIT" \
+  --metrics "$PUBLIC_HOLDOUT_METRICS_JSON"
+```
+
+The export contains `actor.onnx`, `scene.mjbpack`, `manifest.json`, and license/attribution files. It exercises the motion encoder against the pinned PyTorch implementation on synthetic observations. The published manifest carries two synthetic action parity vectors; the browser checks these and both artifact hashes before enabling simulation. `scene.mjbpack` is a gzip container for the independently sourced pinned mjlab G1 model and Unitree geometry, with notices alongside the release. Its extension keeps web hosts from automatically decoding it before hash verification. The worker decompresses it locally and obtains actual render meshes and both the pose and controller state from that same scene. The physics and ONNX runtime do not send inputs to a server.
+
+Verify the release in a private browser preview before publishing. Review the public bundle for only the allowlisted output and for license conditions. Publish it as `models/$MODEL_ID/` under the Vite base path, with the trained route pointing to its versioned `manifest.json`. Record browser configuration and evidence for desktop and mobile. The final policy must track the browser demo commands acceptably; test this on the actual trained weights, not just the synthetic fixture.
+
+For a local test independent of any training run, generate a temporary random actor ONNX against the pinned Python source with `python training/test_browser_export.py --fixture-dir "$FIXTURE"`, start Vite, and run `node scripts/test-browser-runtime.mjs http://127.0.0.1:5173/ "$FIXTURE"`. This tests inference parity, actual local MuJoCo stepping, mesh transfer, reset, and failure on altered hashes in Chromium. It is not a trained-model evaluation.

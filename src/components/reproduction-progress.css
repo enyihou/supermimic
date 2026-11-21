@@ -1,0 +1,86 @@
+.repro-progress {
+  --repro-blue: #235f9c;
+  width: min(100%, 1060px);
+  margin: 0 auto;
+  padding: clamp(22px, 5vw, 64px) clamp(16px, 4vw, 42px);
+  user-select: text;
+}
+
+.repro-intro { margin: 0 0 24px; }
+.repro-kicker { color: var(--repro-blue); font: 500 11px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.repro-intro h1 { font: 630 clamp(27px, 5vw, 44px)/1.12 var(--display); letter-spacing: -.03em; margin: 6px 0 10px; }
+.repro-summary { color: var(--ink2); max-width: 60ch; line-height: 1.5; }
+.repro-counter, .repro-phases, .repro-metrics {
+  min-width: 0;
+  background: var(--page);
+  border: 1px solid var(--fill);
+  border-radius: 16px;
+  padding: clamp(14px, 3vw, 22px);
+}
+.repro-counter { margin: 0 0 14px; }
+.repro-counter-head, .repro-counter-meta, .repro-phase-heading, .repro-chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.repro-counter-head, .repro-phase-heading { font-weight: 600; }
+.repro-iteration-count, .repro-counter-meta { color: var(--ink2); font: 400 12px/1.45 var(--mono); }
+.repro-counter progress {
+  display: block;
+  appearance: none;
+  width: 100%;
+  height: 7px;
+  margin: 12px 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  overflow: hidden;
+}
+.repro-counter progress::-webkit-progress-bar { background: var(--fill); }
+.repro-counter progress::-webkit-progress-value { background: var(--repro-blue); border-radius: 999px; }
+.repro-counter progress::-moz-progress-bar { background: var(--repro-blue); border-radius: 999px; }
+.repro-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.repro-columns h2 { margin-bottom: 12px; font: 600 19px/1.2 var(--display); }
+.repro-phases ol { list-style: none; padding: 0; }
+.repro-phases li { padding: 12px 0; border-top: 1px solid var(--fill); }
+.repro-phases li:last-child { padding-bottom: 0; }
+.repro-phases li p, .repro-empty { color: var(--ink2); line-height: 1.5; margin-top: 3px; }
+.repro-tag {
+  color: #55565e;
+  background: var(--bg);
+  border-radius: 999px;
+  flex: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.repro-tag[data-state="verified"] { color: #176440; background: #e9f7ee; }
+.repro-tag[data-state="blocked"] { color: #844612; background: #fff0e2; }
+.repro-tag[data-state="in-progress"] { color: #235f9c; background: #e8f3fd; }
+.repro-empty { border: 1px dashed var(--hair); border-radius: 12px; padding: 16px; }
+.repro-empty p:first-child { color: var(--ink); font-weight: 550; margin-bottom: 4px; }
+.repro-chart { border-top: 1px solid var(--fill); padding-top: 12px; }
+.repro-chart + .repro-chart { margin-top: 12px; }
+.repro-chart h3 { font-size: 14px; }
+.repro-chart figcaption span { color: var(--repro-blue); font: 500 12px/1.4 var(--mono); }
+.repro-chart-body { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px; align-items: stretch; margin: 8px 0 0; }
+.repro-chart svg { display: block; width: 100%; height: 108px; }
+.repro-chart-grid { stroke: var(--hair); fill: none; }
+.repro-chart-series { stroke: var(--repro-blue); stroke-width: 2; fill: none; stroke-linejoin: round; }
+.repro-chart-dot { fill: var(--repro-blue); }
+.repro-y-axis, .repro-x-axis { display: flex; justify-content: space-between; color: var(--ink2); font: 400 10px/1.4 var(--mono); }
+.repro-y-axis { text-align: right; flex-direction: column; }
+.repro-y-axis > span:only-child { margin: auto 0; }
+.repro-x-axis { gap: 10px; padding-left: 5px; }
+.repro-chart-data { margin-top: 12px; }
+.repro-chart-data summary { width: fit-content; cursor: pointer; color: var(--repro-blue); }
+.repro-data-table { max-height: 220px; overflow: auto; }
+.repro-data-table table { width: 100%; border-collapse: collapse; font: 400 12px/1.4 var(--mono); }
+.repro-data-table :is(th, td) { text-align: left; padding: 5px 3px; border-bottom: 1px solid var(--fill); }
+
+@media (max-width: 680px) {
+  .repro-columns { grid-template-columns: minmax(0, 1fr); }
+}
