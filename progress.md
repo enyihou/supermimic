@@ -29,6 +29,11 @@ Last updated: 2026-11-21
 - Confirmed from the dataset card that BONES-SEED contains 142,220 annotated motions with Unitree G1 MuJoCo-compatible trajectories and requires accepting access conditions and its license before download.
 - Recorded that the immediate user action is to obtain the private `g1.tar.gz` archive and provide its path plus an approved private archive destination for backups.
 
+## Credential and staging decision
+
+- Adopted the workflow of keeping Hugging Face credentials on the user's local machine, transferring only the downloaded archive to gpu01, verifying its checksum, and staging it into `$LOCAL_SCRATCH` for training.
+- Recorded that the full archive must be present before submission so the job does not depend on a live network transfer.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.

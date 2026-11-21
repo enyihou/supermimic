@@ -26,6 +26,7 @@ Extend the project with a reproducible single-GPU run of the authors' pinned Sup
 - Use the published demo's local robot geometry/model data for fidelity, with an independent React/Three.js control layer.
 - Run the official reproduction on one allocated GPU through `lab-submit` on gpu01. The current cluster limit is three days per job, so the full run must be timed and resumable.
 - Keep source, manifests, checksums, audit reports, and small graphs in GitHub. Keep BONES-SEED, private checkpoints, and any credentials in an authorized private archive and local copies.
+- Keep Hugging Face credentials on the user's local machine. Download the gated archive locally, transfer only the archive to gpu01, verify its checksum before submission, and let the Slurm job stage it to `$LOCAL_SCRATCH`.
 - Use an explicit version manifest for every trained artifact. It must include source commits, dataset checksum, training config, checkpoint step, evaluation metrics, and artifact checksums.
 
 ## Errors Encountered
