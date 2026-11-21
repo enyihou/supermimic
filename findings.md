@@ -1,5 +1,16 @@
 # Findings: SuperMimic × higher-order supervision
 
+## Overnight run planning audit
+
+- The current official launcher pins SuperMimic to `5fb92297ab4fe3d86629d9f0c635334791bb0d5f` and mjlab research to `379c55e88b1dec73f93943e524a879b2ebbf45c5`.
+- The intended official configuration is one GPU, 4,096 environments, 320,000 iterations, and a three-day Slurm time limit. Its actual duration is unknown until a timed benchmark runs on the target GPU.
+- BONES-SEED is gated and is not present in this workspace. The current project has no completed official checkpoint, Slurm job record, or full-run logs.
+- The current backup loop overwrites `latest.tgz`, suppresses archive errors, has no atomic temporary publish, and does not emit the runbook's `SUCCESS` and `job-status.txt` completion evidence. It needs hard failure handling before unattended use.
+- GitHub's public `enyihou/supermimic` repository is suitable for code, pinned commit metadata, checksums, audit JSON, and sanitized graphs. It is not a safe destination for the gated dataset, credentials, or private model checkpoints.
+- A private artifact root must retain the input checksum, source archive, environment metadata, logs, checkpoints, evaluation outputs, and a run manifest. A second local copy should be retained only after checking `/home` and `/public` quota headroom.
+- The default website embeds the published browser runtime. A PyTorch training checkpoint cannot be substituted into that iframe without a verified export or a server-side inference service. The trained-model website milestone therefore depends on defining the inference boundary.
+- The higher-order Taylor plan contains multiple phases, matched baselines, held-out recovery evaluation, and potentially multiple seeds. It should be scheduled after the official reproduction and treated as a separate experiment series rather than assumed to finish in the same overnight run.
+
 ## SuperMimic demo rebuild reconnaissance
 
 - Target is a fullscreen WebGL demo titled `WM Imagination` with a pale cyclorama, radial gradient, fading floor grid, soft shadow, and a centered Unitree G1 robot.

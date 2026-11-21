@@ -17,6 +17,13 @@ Last updated: 2026-11-21
 - The recorded compute result is a 73.7-second frozen-teacher CUDA smoke for the independent reproduction. It did not train a new SuperMimic model.
 - The official 320,000-iteration run remains a prepared launcher and is still pending BONES-SEED access and an authorized archive path.
 
+## Overnight reproduction planning
+
+- Audited the requested overnight plan against the AIR runbook and current launchers.
+- Identified missing prerequisites and corrections. The full run needs gated dataset access, an approved private archive root, a timed throughput benchmark, resumable checkpoints, atomic backup publication, and explicit Slurm completion evidence.
+- Recorded the release rule that GitHub receives source, manifests, checksums, audit reports, and sanitized graphs. Gated data, credentials, and private checkpoints remain in private storage.
+- Recorded that the higher-order supervision work and browser inference export are separate milestones. They cannot be assumed to complete in the same overnight training job.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.
