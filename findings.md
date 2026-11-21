@@ -38,3 +38,4 @@
 - Credential separation is feasible and preferable. The user can authenticate and download on the local SSH server, transfer only `g1.tar.gz` to gpu01, verify the pre- and post-transfer SHA-256 values, and keep the Hugging Face token off AIR. Training still reads from node-local scratch after Slurm stages the archive.
 - The user's access topology is phone -> local SSH server -> AIR. The local SSH server is the download host when it has outbound HTTPS access. The AIR host has no outbound Hugging Face access.
 - A live upload or network-mounted dataset during training would add an avoidable failure mode. The archive should be fully staged before the job is submitted.
+- AIR verification shows `/home` and `/public` on gpu01 are local XFS filesystems suitable for staging the compressed input before submission. The personal `/data/houey` path is absent, so checkpoint backups need an approved existing project path under `/data`.

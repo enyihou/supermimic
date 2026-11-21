@@ -35,6 +35,11 @@ Last updated: 2026-11-21
 - Recorded that the full archive must be present before submission so the job does not depend on a live network transfer.
 - Clarified the actual topology as phone -> local SSH server -> AIR. Hugging Face access belongs on the local SSH server, while AIR receives only the downloaded archive.
 
+## AIR transfer verification
+
+- Verified that gpu01 `/home` and `/public` are local XFS filesystems. The archive can be transferred there, hashed, and staged to `$LOCAL_SCRATCH` by the batch job.
+- Verified that `/data/houey` is absent. A private approved project path is still required for checkpoint and audit backups.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.
