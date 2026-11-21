@@ -20,7 +20,11 @@ const dataset = {
   sha256: '52580ea8bced72ea9e2ff1e7b68f01c51c7f1099581e9a46b7c87e1dec106d8a',
   csv_files: 142_220,
 }
-const heldOut = { source: 'lvhaidong/LAFAN1_Retargeting_Dataset', revision: 'ce1572906efe6157840e8474d5a0d7aa87481e74', clips: 40 }
+const heldOut = {
+  source: 'lvhaidong/LAFAN1_Retargeting_Dataset', revision: 'ce1572906efe6157840e8474d5a0d7aa87481e74', clips: 40,
+  clip_manifest_sha256: '545cb292fa1fe99809e7bc289a075727a78ca305898f1a71d57b5dd15a92b27d',
+}
+const curveIds = ['train-episode-reward', 'train-episode-length', 'train-world-model-loss']
 const names = ['ATTRIBUTION.md', 'Unitree-LICENSE.txt', 'actor.onnx', 'mjlab-LICENSE.txt', 'scene.mjbpack']
 const allowedPublication = {
   'Unitree-LICENSE.txt': 'a5d73fc4aca9074e3e6fe0b1a0ba763cf9514b2249b7390ed20fe8d53630bf25',
@@ -32,13 +36,13 @@ const metrics = [
 ]
 const checks = [
   'slurm_terminal_state', 'job_status', 'success_marker', 'source_pins', 'dataset_checksum', 'packed_motion_checksum',
-  'target_step', 'checkpoint_archive_integrity', 'milestone_retention', 'held_out_evaluation',
+  'target_step', 'checkpoint_archive_integrity', 'milestone_retention',
 ]
 const auditKeys = [
   'schema_version', 'phase', 'source_commits', 'reproduction_commit', 'dataset_sha256', 'motion_archive_sha256',
   'code_sha256', 'environment_sha256', 'allocations', 'num_envs', 'checkpoint_step', 'checkpoint_job_id',
   'checkpoint_archive_sha256', 'checkpoint_archive_bytes', 'checkpoint_artifact_sha256', 'retained_checkpoints', 'motions',
-  'motion_manifest', 'outputs_archive_sha256', 'verified_checks', 'held_out_evaluation_verified', 'held_out_evaluation',
+  'motion_manifest', 'outputs_archive_sha256', 'verified_checks', 'held_out_evaluation_verified',
 ]
 const expectedAttribution = '# SuperMimic browser policy\n\n' +
   'Training data includes Motion Data by [Bones Studio](https://bones.studio/). ' +
@@ -89,12 +93,58 @@ async function hash(path) {
   return digest.digest('hex')
 }
 
-function checkAudit(audit, manifest, suiteManifestHash) {
-  check(keys(audit, auditKeys) && audit.schema_version === 1 && audit.phase === 'full' &&
-    audit.checkpoint_step === target && audit.num_envs === environments && audit.held_out_evaluation_verified === true &&
-    sameList(audit.verified_checks, checks), 'Full audit must verify the exact 320,000-step, 4,096-environment run and held-out evaluation')
-  check(pinned(audit.source_commits) && audit.reproduction_commit === manifest.source_commits.reproduction &&
-    audit.dataset_sha256 === manifest.dataset_sha256, 'Audit source revisions or dataset hash differ from release manifest')
+function checkLearningCurves(curves, checkpoint) {
+  check(keys(curves, ['schema_version', 'coverage', 'metrics_jsonl_sha256', 'series']) && curves.schema_version === 1 &&
+    Array.isArray(curves.series) && curves.series.length <= curveIds.length,
+  'Learning curves must use the allowlisted aggregate schema')
+  const coverage = curves.coverage
+  check(keys(coverage, ['scope', 'resumed_from_iterations', 'log_interval', 'first_logged_step', 'last_logged_step', 'logged_rows']) &&
+    coverage.scope === 'final-allocation-only' && Number.isSafeInteger(coverage.resumed_from_iterations) &&
+    coverage.resumed_from_iterations >= 0 && coverage.resumed_from_iterations <= checkpoint && positive(coverage.log_interval) &&
+    Number.isSafeInteger(coverage.logged_rows) && coverage.logged_rows >= 0,
+  'Learning curve coverage is invalid')
+  const { resumed_from_iterations: resumed, log_interval: stride, logged_rows: count,
+    first_logged_step: first, last_logged_step: last } = coverage
+  const atCadence = (step) => Number.isSafeInteger(step) && step > resumed && step <= checkpoint && (step - 1) % stride === 0
+  const firstExpected = Math.ceil(resumed / stride) * stride + 1
+  const expectedRows = firstExpected > checkpoint ? 0 : Math.floor((checkpoint - firstExpected) / stride) + 1
+  check(count === expectedRows, 'Learning curve coverage row count does not span the final allocation on the logged cadence')
+  if (count === 0) {
+    check(curves.metrics_jsonl_sha256 === null && first === null && last === null && curves.series.length === 0,
+      'Empty learning curves cannot include source hashes, steps or series')
+    return
+  }
+  check(sha256(curves.metrics_jsonl_sha256) && first === firstExpected && last === firstExpected + (count - 1) * stride,
+  'Learning curve source hash, coverage steps or row count are inconsistent')
+  let previousId = -1
+  for (const series of curves.series) {
+    check(keys(series, ['id', 'observation_count', 'points']), 'Learning curve series contains unexpected fields')
+    const index = curveIds.indexOf(series.id)
+    check(index > previousId && positive(series.observation_count) && series.observation_count <= count &&
+      Array.isArray(series.points) && series.points.length === Math.min(series.observation_count, 128),
+    'Learning curve series ID, ordering or point count is invalid')
+    previousId = index
+    let previousStep = 0
+    for (const point of series.points) {
+      check(keys(point, ['step', 'value']) && atCadence(point.step) && point.step >= first && point.step <= last && point.step > previousStep &&
+        Number.isFinite(point.value) && Math.abs(point.value) <= Number.MAX_SAFE_INTEGER &&
+        (index === 0 || (index === 1 ? point.value > 0 : point.value >= 0)),
+      'Learning curve point is not an allowlisted bounded aggregate on the logged step cadence')
+      previousStep = point.step
+    }
+  }
+}
+
+function checkAudit(audit, manifest) {
+  const attached = audit?.held_out_evaluation_verified === true
+  const curves = object(audit) && Object.hasOwn(audit, 'learning_curves')
+  check(keys(audit, [...auditKeys, ...(attached ? ['held_out_evaluation'] : []), ...(curves ? ['learning_curves'] : [])]) &&
+    audit.schema_version === 1 && audit.phase === 'full' && audit.checkpoint_step === target && audit.num_envs === environments &&
+    typeof audit.held_out_evaluation_verified === 'boolean' && sameList(audit.verified_checks, attached ? [...checks, 'held_out_evaluation'] : checks) &&
+    (!manifest || attached), 'Full audit must verify the exact 320,000-step, 4,096-environment run (and held-out evaluation before model publication)')
+  check(pinned(audit.source_commits) && hex(40, audit.reproduction_commit) && audit.dataset_sha256 === dataset.sha256 &&
+    (!manifest || (audit.reproduction_commit === manifest.source_commits.reproduction && audit.dataset_sha256 === manifest.dataset_sha256)),
+  'Audit source revisions or dataset hash differ from release requirements')
   check(Array.isArray(audit.allocations) && audit.allocations.length > 0 &&
     audit.allocations.every((job) => keys(job, jobFields) && completed(job)) && jobId(audit.checkpoint_job_id),
   'Missing successful single-GPU Slurm training evidence')
@@ -103,7 +153,7 @@ function checkAudit(audit, manifest, suiteManifestHash) {
   const hashes = audit.checkpoint_artifact_sha256
   const artifacts = ['actor.pt', 'world_model.pt', 'training_state.pt', 'run-config.json']
   check((keys(hashes, artifacts) || keys(hashes, [...artifacts, 'critic.pt'])) && Object.values(hashes).every(sha256) &&
-    hashes['actor.pt'] === manifest.checkpoint_actor_sha256 && hashes['world_model.pt'] === manifest.checkpoint_world_model_sha256,
+    (!manifest || (hashes['actor.pt'] === manifest.checkpoint_actor_sha256 && hashes['world_model.pt'] === manifest.checkpoint_world_model_sha256)),
   'Export is not bound to the audited final checkpoint artifacts')
   check(positive(audit.checkpoint_archive_bytes) && Array.isArray(audit.retained_checkpoints) &&
     audit.retained_checkpoints.length === target / milestone && audit.retained_checkpoints.every((item, i) =>
@@ -121,19 +171,21 @@ function checkAudit(audit, manifest, suiteManifestHash) {
       (cohort.selection_id === 'supermimic-v3-appendix-e-approx-v1' && cohort.approximate === true)
     ) && keys(audit.motions, ['clips', 'frames', 'fps']) && ['clips', 'frames', 'fps'].every((key) => audit.motions[key] === cohort[key]),
   'Training motion selection, clip counts or sample rates do not match the audited exact or approximate cohort')
+  if (curves) checkLearningCurves(audit.learning_curves, audit.checkpoint_step)
+  if (!attached) return
 
   const evaluation = audit.held_out_evaluation
   check(keys(evaluation, [...jobFields, 'suite', 'metrics', 'metrics_sha256', 'outputs_archive_sha256']) && completed(evaluation) &&
     evaluation.job_id !== audit.checkpoint_job_id && audit.allocations.every((job) => evaluation.job_id !== job.job_id) &&
     sha256(evaluation.metrics_sha256) && sha256(evaluation.outputs_archive_sha256), 'Missing successful independent held-out Slurm evidence')
   const suite = evaluation.suite
-  check(keys(suite, [...Object.keys(heldOut), 'clip_manifest_sha256', 'archive_sha256']) &&
-    Object.entries(heldOut).every(([key, value]) => suite[key] === value) &&
-    suite.clip_manifest_sha256 === suiteManifestHash && sha256(suite.archive_sha256) &&
+  check(keys(suite, [...Object.keys(heldOut), 'archive_sha256']) &&
+    Object.entries(heldOut).every(([key, value]) => suite[key] === value) && sha256(suite.archive_sha256) &&
     ![audit.dataset_sha256, audit.motion_archive_sha256].includes(suite.archive_sha256), 'Held-out suite does not match the predeclared independent corpus')
   const m = evaluation.metrics
-  check(keys(m, metrics) && keys(manifest.metrics, metrics) && metrics.every((key) =>
-    Number.isFinite(m[key]) && manifest.metrics[key] === m[key]), 'Release metrics must exactly match the audited held-out aggregates')
+  check(keys(m, metrics) && metrics.every((key) => Number.isFinite(m[key])) &&
+    (!manifest || (keys(manifest.metrics, metrics) && metrics.every((key) => manifest.metrics[key] === m[key]))),
+  'Release metrics must exactly match the audited held-out aggregates')
   check(m.evaluated_clips === heldOut.clips && Number.isSafeInteger(m.completed_clips) &&
     m.completed_clips >= 0 && m.completed_clips <= m.evaluated_clips && m.failed_clips === m.evaluated_clips - m.completed_clips &&
     m.completion_rate === m.completed_clips / m.evaluated_clips &&
@@ -141,6 +193,26 @@ function checkAudit(audit, manifest, suiteManifestHash) {
     m.evaluated_steps <= m.reference_steps && (m.failed_clips !== 0 || m.evaluated_steps === m.reference_steps) &&
     m.mean_normalized_return <= 1 + 1e-5 && m.mean_root_position_error_m >= 0 && m.mean_heading_aligned_body_position_error_m >= 0,
   'Held-out aggregate counts or metrics are inconsistent')
+}
+
+async function verifyPublicAudit(publicRoot, manifest) {
+  const evidence = join(publicRoot, 'reproduction')
+  const auditFile = join(evidence, 'full-audit.json')
+  if (!manifest) {
+    const present = await lstat(auditFile).then(() => true, (error) => {
+      if (error.code === 'ENOENT') return false
+      throw error
+    })
+    if (!present) return
+  }
+  await directory(evidence, 'Public reproduction evidence')
+  const preflight = await json(join(evidence, 'preflight.json'), 'Dataset preflight')
+  check(preflight.schema_version === 1 && pinned(preflight.source_commits) &&
+    Object.entries(dataset).every(([key, value]) => preflight.dataset?.[key] === value) &&
+    preflight.dataset.local_sha256_verified === true && preflight.dataset.air_sha256_verified === true &&
+    preflight.dataset.local_archive_members_verified === true, 'The pinned dataset must be verified locally and after AIR transfer')
+  const audit = await json(auditFile, 'Full training and held-out audit')
+  checkAudit(audit, manifest)
 }
 
 async function verifyActor(path, manifest) {
@@ -234,6 +306,7 @@ export async function verifyRelease(publicRoot = join(root, 'public')) {
   check(keys(registry, ['schema_version', 'active']) && registry.schema_version === 1, 'Invalid model registry')
   if (registry.active === null) {
     await directory(modelRoot, 'Empty model registry', ['releases.json'])
+    await verifyPublicAudit(publicRoot, null)
     return null
   }
   const id = registry.active
@@ -259,15 +332,7 @@ export async function verifyRelease(publicRoot = join(root, 'public')) {
   ]) && manifest.robot.joints.every((item) => keys(item, ['name', 'actuator'])) &&
     manifest.robot.bodies.every((item) => keys(item, ['name', 'parent'])), 'Model metadata contains unexpected data')
 
-  const evidence = join(publicRoot, 'reproduction')
-  await directory(evidence, 'Public reproduction evidence')
-  const preflight = await json(join(evidence, 'preflight.json'), 'Dataset preflight')
-  check(preflight.schema_version === 1 && pinned(preflight.source_commits) &&
-    Object.entries(dataset).every(([key, value]) => preflight.dataset?.[key] === value) &&
-    preflight.dataset.local_sha256_verified === true && preflight.dataset.air_sha256_verified === true &&
-    preflight.dataset.local_archive_members_verified === true, 'The pinned dataset must be verified locally and after AIR transfer')
-  const audit = await json(join(evidence, 'full-audit.json'), 'Full training and held-out audit')
-  checkAudit(audit, manifest, await hash(join(root, 'training', 'lafan1_g1_eval_manifest.tsv')))
+  await verifyPublicAudit(publicRoot, manifest)
 
   for (const name of names) {
     const artifact = manifest.artifacts[name]

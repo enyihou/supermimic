@@ -9,7 +9,8 @@ import re
 from datetime import date
 from pathlib import Path
 
-from audit_official import SOURCE_COMMITS, atomic_json, sha256_file
+from audit_official import CHECKPOINT_FILES, OPTIONAL_CHECKPOINT_FILES, SOURCE_COMMITS, atomic_json, sha256_file
+from audit_training_metrics import public_series as public_training_series
 from evaluate_heldout import MANIFEST, REPOSITORY, REVISION
 
 
@@ -32,7 +33,17 @@ CHECKS = frozenset({
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX40 = re.compile(r"[0-9a-f]{40}")
 JOB = re.compile(r"[1-9][0-9]*")
+RELEASE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+QA_ID = re.compile(r"(?:^|-)(?:synthetic|fixture|mock|test|smoke|benchmark|untrained|random)(?:-|$)")
 LIMIT = 2**53 - 1
+MAX_JSON_BYTES = 256 * 1024
+JOB_FIELDS = {"job_id", "state", "exit_code", "allocated_gpus"}
+PHASE_FIELDS = {
+    "schema_version", "phase", "source_commits", "reproduction_commit", "dataset_sha256", "motion_archive_sha256",
+    "code_sha256", "environment_sha256", "allocations", "num_envs", "checkpoint_step", "checkpoint_job_id",
+    "checkpoint_archive_sha256", "checkpoint_archive_bytes", "checkpoint_artifact_sha256", "retained_checkpoints",
+    "motions", "motion_manifest", "outputs_archive_sha256", "verified_checks", "held_out_evaluation_verified",
+}
 
 
 def require(condition: bool, message: str) -> None:
@@ -43,6 +54,12 @@ def require(condition: bool, message: str) -> None:
 def mapping(value, label) -> dict:
     require(isinstance(value, dict), f"Expected object for {label}")
     return value
+
+
+def exact_shape(value, fields, label) -> dict:
+    obj = mapping(value, label)
+    require(obj.keys() == set(fields), f"Unexpected or missing fields for {label}")
+    return obj
 
 
 def integer(value, label, low=0, high=LIMIT) -> int:
@@ -86,40 +103,60 @@ def read_json(path: Path) -> dict:
         require(len(obj) == len(pairs), "Duplicate JSON object field")
         return obj
 
-    with path.open(encoding="utf-8") as stream:
-        value = json.load(stream, parse_constant=forbidden_constant,
-                          parse_float=finite_float, object_pairs_hook=unique_keys)
+    require(path.is_file() and not path.is_symlink(), "Input JSON must be a regular file")
+    with path.open("rb") as stream:
+        data = stream.read(MAX_JSON_BYTES + 1)
+    require(0 < len(data) <= MAX_JSON_BYTES, "Input JSON exceeds size bounds or is empty")
+    value = json.loads(data.decode("utf-8"), parse_constant=forbidden_constant,
+                       parse_float=finite_float, object_pairs_hook=unique_keys)
     return mapping(value, "input JSON")
 
 
 def verify_preflight(preflight: dict, report_date: date) -> bool:
+    exact_shape(preflight, {"schema_version", "phase", "status", "updated_utc", "source_commits", "dataset"}, "preflight")
     exact_fields(preflight, {"schema_version": 1, "phase": "dataset_preflight"}, "preflight")
-    exact_fields(mapping(preflight.get("source_commits"), "preflight pins"), SOURCE_COMMITS, "preflight source pins")
+    exact_fields(exact_shape(preflight.get("source_commits"), SOURCE_COMMITS, "preflight source pins"),
+                 SOURCE_COMMITS, "preflight source pins")
     require(iso_day(preflight.get("updated_utc")) <= report_date, "Report date predates preflight evidence")
-    dataset = mapping(preflight.get("dataset"), "preflight dataset")
-    exact_fields(dataset, {
+    expected = {
         "id": DATASET_ID, "revision": DATASET_REVISION, "archive": "g1.tar.gz",
         "sha256": DATASET_SHA256, "archive_bytes": ARCHIVE_BYTES, "csv_files": RAW_CLIPS,
         "csv_expanded_bytes": EXPANDED_BYTES, "local_sha256_verified": True,
         "local_archive_members_verified": True,
-    }, "independently checked BONES revision")
+    }
+    dataset = exact_shape(preflight.get("dataset"), {*expected, "air_sha256_verified"}, "preflight dataset")
+    exact_fields(dataset, expected, "independently checked BONES revision")
     require(type(dataset.get("air_sha256_verified")) is bool, "Missing AIR archive verification state")
+    exact_fields(preflight, {"status": "local_and_air_verified" if dataset["air_sha256_verified"]
+                             else "local_verified_air_transfer_pending"}, "preflight status")
     return dataset["air_sha256_verified"]
 
 
-def terminal(row, label: str) -> str:
-    obj = mapping(row, label)
+def terminal(row, label: str, extra=()) -> str:
+    obj = exact_shape(row, JOB_FIELDS.union(extra), label)
     exact_fields(obj, {"state": "COMPLETED", "exit_code": "0:0", "allocated_gpus": 1}, label)
     return fingerprint(obj.get("job_id"), f"{label} job ID", JOB)
 
 
 def verify_phase(audit: dict, phase: str) -> dict:
     envs, step = RECIPE[phase]
+    mapping(audit, f"{phase} audit")
+    held_out = audit.get("held_out_evaluation_verified")
+    require(type(held_out) is bool, f"Missing evaluation flag for {phase}")
+    require(not held_out or phase == "full", f"Unexpected held-out evaluation state for {phase}")
+    extra = {"benchmark"} if phase == "benchmark" else set()
+    if phase == "full":
+        if "learning_curves" in audit:
+            extra.add("learning_curves")
+        if held_out:
+            extra.add("held_out_evaluation")
+    exact_shape(audit, PHASE_FIELDS | extra, f"{phase} audit")
     exact_fields(audit, {
         "schema_version": 1, "phase": phase, "num_envs": envs, "checkpoint_step": step,
         "dataset_sha256": DATASET_SHA256,
     }, f"{phase} recipe")
-    exact_fields(mapping(audit.get("source_commits"), f"{phase} pins"), SOURCE_COMMITS, f"{phase} source pins")
+    exact_fields(exact_shape(audit.get("source_commits"), SOURCE_COMMITS, f"{phase} pins"),
+                 SOURCE_COMMITS, f"{phase} source pins")
     for label in ("motion_archive_sha256", "code_sha256", "environment_sha256",
                   "checkpoint_archive_sha256", "outputs_archive_sha256"):
         fingerprint(audit.get(label), f"{phase} {label}")
@@ -127,16 +164,20 @@ def verify_phase(audit: dict, phase: str) -> dict:
     fingerprint(audit.get("checkpoint_job_id"), f"{phase} checkpoint job ID", JOB)
     checkpoint_bytes = integer(audit.get("checkpoint_archive_bytes"), f"{phase} archive size", low=1)
     artifacts = mapping(audit.get("checkpoint_artifact_sha256"), f"{phase} artifacts")
-    for name in ("actor.pt", "world_model.pt", "training_state.pt", "run-config.json"):
+    require(CHECKPOINT_FILES <= artifacts.keys() <= CHECKPOINT_FILES | OPTIONAL_CHECKPOINT_FILES,
+            f"Unexpected or missing fields for {phase} artifacts")
+    for name in artifacts:
         fingerprint(artifacts.get(name), f"{phase} artifact {name}")
     passed = audit.get("verified_checks")
+    expected_checks = CHECKS | {"held_out_evaluation"} if held_out else CHECKS
     require(isinstance(passed, list) and all(isinstance(item, str) for item in passed)
-            and CHECKS <= set(passed), f"Missing successful audit checks for {phase}")
+            and len(passed) == len(expected_checks) and set(passed) == expected_checks,
+            f"Unexpected or missing audit checks for {phase}")
     allocations = audit.get("allocations")
     require(isinstance(allocations, list) and len(allocations) == 1, f"Missing final allocation record for {phase}")
     finished_job = terminal(allocations[0], f"{phase} final allocation")
 
-    motions = mapping(audit.get("motions"), f"{phase} motions")
+    motions = exact_shape(audit.get("motions"), {"clips", "frames", "fps"}, f"{phase} motions")
     clips = integer(motions.get("clips"), f"{phase} motion count", low=1, high=RAW_CLIPS)
     frames = integer(motions.get("frames"), f"{phase} motion frames", low=2 * clips)
     require(real(motions.get("fps"), f"{phase} frame rate") == 50.0, f"Unexpected motion frame rate for {phase}")
@@ -144,9 +185,12 @@ def verify_phase(audit: dict, phase: str) -> dict:
         require(clips == 64, "Smoke must use the 64-clip subset")
     else:
         require(clips > 64, f"{phase} requires the full reviewed selection, not a smoke subset")
-    manifest = mapping(audit.get("motion_manifest"), f"{phase} motion provenance")
     cohort = {"clips": clips, "frames": frames, "input_fps": 120, "fps": 50,
               "selection": "archive-order-smoke" if phase == "smoke" else "explicit-allowlist"}
+    manifest_fields = {*cohort, "sha256", "clipset_sha256"}
+    if phase != "smoke":
+        manifest_fields.update({"selection_id", "approximate", "allowlist_sha256"})
+    manifest = exact_shape(audit.get("motion_manifest"), manifest_fields, f"{phase} motion provenance")
     exact_fields(manifest, cohort, f"{phase} motion provenance")
     for key in ("sha256", "clipset_sha256"):
         cohort[key] = fingerprint(manifest.get(key), f"{phase} motion {key}")
@@ -158,26 +202,16 @@ def verify_phase(audit: dict, phase: str) -> dict:
                 f"Inconsistent Appendix E provenance for {phase}")
         cohort.update(selection_id=selection, approximate=approximate,
                       allowlist_sha256=fingerprint(manifest.get("allowlist_sha256"), f"{phase} allowlist"))
-    else:
-        require(not {"selection_id", "approximate", "allowlist_sha256"} & manifest.keys(),
-                "Smoke must not claim authors' or approximate full cohort")
     retained = audit.get("retained_checkpoints")
     required_steps = MILESTONE_STEPS if phase == "full" else [step]
     require(isinstance(retained, list) and len(retained) == len(required_steps), f"Unexpected retained steps for {phase}")
     for row, expected_step in zip(retained, required_steps, strict=True):
-        mapping(row, f"{phase} retained checkpoint")
+        exact_shape(row, {"step", "archive_bytes", "archive_sha256"}, f"{phase} retained checkpoint")
         exact_fields(row, {"step": expected_step}, f"{phase} retained checkpoint step")
         integer(row.get("archive_bytes"), f"{phase} retained checkpoint size", low=1)
         fingerprint(row.get("archive_sha256"), f"{phase} retained checkpoint")
     exact_fields(retained[-1], {"archive_sha256": audit["checkpoint_archive_sha256"],
                                 "archive_bytes": checkpoint_bytes}, f"{phase} target checkpoint")
-    held_out = audit.get("held_out_evaluation_verified")
-    require(type(held_out) is bool, f"Missing evaluation flag for {phase}")
-    if not held_out or phase != "full":
-        require(held_out is False and "held_out_evaluation" not in audit and "held_out_evaluation" not in passed,
-                f"Unexpected held-out evaluation state for {phase}")
-    if phase != "benchmark":
-        require("benchmark" not in audit, f"Unexpected benchmark data for {phase}")
     return {"step": step, "envs": envs, "clips": clips, "frames": frames, "archive_bytes": checkpoint_bytes,
             "finished_job": finished_job, "retained": retained, "cohort": cohort}
 
@@ -188,12 +222,17 @@ def make_series(id_: str, label: str, unit: str, points) -> dict:
 
 
 def series_benchmark(audit: dict, stage: dict) -> tuple[list[dict], float]:
-    obj = mapping(audit.get("benchmark"), "benchmark metrics")
+    obj = exact_shape(audit.get("benchmark"), {
+        "loop_elapsed_seconds", "end_to_end_iterations_per_second", "steady_iterations_per_second",
+        "steady_environment_steps_per_second", "mean_steady_checkpoint_seconds",
+        "estimated_320000_iteration_seconds_at_1000_step_saves", "checkpoint_samples",
+    }, "benchmark metrics")
     samples = obj.get("checkpoint_samples")
     require(isinstance(samples, list) and len(samples) == len(BENCHMARK_STEPS), "Missing benchmark checkpoint windows")
     computes, publishes, sizes = [], [], []
     for row, step in zip(samples, BENCHMARK_STEPS, strict=True):
-        mapping(row, "benchmark checkpoint sample")
+        exact_shape(row, {"step", "iterations", "compute_seconds", "checkpoint_seconds", "checkpoint_archive_bytes"},
+                    "benchmark checkpoint sample")
         exact_fields(row, {"step": step, "iterations": 200}, "benchmark sample extent")
         computes.append(real(row.get("compute_seconds"), "benchmark sample compute time", positive=True))
         publishes.append(real(row.get("checkpoint_seconds"), "benchmark sample checkpoint time", positive=True))
@@ -222,19 +261,23 @@ def series_benchmark(audit: dict, stage: dict) -> tuple[list[dict], float]:
 
 
 def series_evaluation(audit: dict, claimed_jobs: set[str]) -> tuple[list[dict], int]:
-    require("held_out_evaluation" in audit["verified_checks"], "Held-out verification check is missing")
     held_out = mapping(audit.get("held_out_evaluation"), "held-out result")
-    eval_job = terminal(held_out, "held-out allocation")
+    eval_job = terminal(held_out, "held-out allocation", {"suite", "metrics", "metrics_sha256", "outputs_archive_sha256"})
     require(eval_job not in claimed_jobs, "Evaluation must have its own allocation")
     fingerprint(held_out.get("metrics_sha256"), "held-out metrics")
     fingerprint(held_out.get("outputs_archive_sha256"), "held-out outputs")
-    suite = mapping(held_out.get("suite"), "held-out suite")
+    suite = exact_shape(held_out.get("suite"), {"source", "revision", "clips", "clip_manifest_sha256", "archive_sha256"},
+                        "held-out suite")
     exact_fields(suite, {
         "source": REPOSITORY, "revision": REVISION, "clips": EVAL_CLIPS,
         "clip_manifest_sha256": sha256_file(MANIFEST),
     }, "independent held-out suite")
-    require(fingerprint(suite.get("archive_sha256"), "held-out archive") != DATASET_SHA256, "Holdout shares training dataset")
-    values = mapping(held_out.get("metrics"), "held-out metrics")
+    require(fingerprint(suite.get("archive_sha256"), "held-out archive") not in {DATASET_SHA256, audit["motion_archive_sha256"]},
+            "Holdout shares training dataset or packed training archive")
+    values = exact_shape(held_out.get("metrics"), {
+        "evaluated_clips", "completed_clips", "failed_clips", "completion_rate", "evaluated_steps", "reference_steps",
+        "mean_normalized_return", "mean_root_position_error_m", "mean_heading_aligned_body_position_error_m",
+    }, "held-out metrics")
     exact_fields(values, {"evaluated_clips": EVAL_CLIPS}, "held-out evaluated clip count")
     completed = integer(values.get("completed_clips"), "completed held-out clips", high=EVAL_CLIPS)
     failed = integer(values.get("failed_clips"), "failed held-out clips", high=EVAL_CLIPS)
@@ -254,15 +297,41 @@ def series_evaluation(audit: dict, claimed_jobs: set[str]) -> tuple[list[dict], 
     return [make_series(id_, label, unit, [(step, value)]) for id_, label, unit, value in rows], completed
 
 
+def series_training(curves, step: int) -> tuple[list[dict], dict]:
+    obj = exact_shape(curves, {"schema_version", "coverage", "metrics_jsonl_sha256", "series"}, "learning curves")
+    exact_shape(obj["coverage"], {"scope", "resumed_from_iterations", "log_interval", "first_logged_step",
+                                  "last_logged_step", "logged_rows"}, "learning curve coverage")
+    require(isinstance(obj["series"], list), "Expected learning curve series list")
+    for series in obj["series"]:
+        row = exact_shape(series, {"id", "observation_count", "points"}, "learning curve series")
+        require(isinstance(row["points"], list), "Expected learning curve points list")
+        for point in row["points"]:
+            exact_shape(point, {"step", "value"}, "learning curve point")
+    return public_training_series(obj, step)
+
+
 def cohort_description(stage: dict) -> str:
     if stage["cohort"]["approximate"]:
         return f"{stage['clips']:,} BONES-SEED clips selected by our approximate Appendix E filter"
     return f"{stage['clips']:,} BONES-SEED clips selected by the authors’ Appendix E manifest"
 
 
-def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, full=None) -> dict:
+def active_release(registry) -> str | None:
+    if registry is None:
+        return None
+    obj = exact_shape(registry, {"schema_version", "active"}, "public release registry")
+    require(type(obj["schema_version"]) is int and obj["schema_version"] == 1, "Invalid public release registry")
+    model_id = obj["active"]
+    require(model_id is None or (isinstance(model_id, str) and RELEASE_ID.fullmatch(model_id)
+                                 and not QA_ID.search(model_id)), "Invalid active release ID")
+    return model_id
+
+
+def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, full=None, registry=None) -> dict:
     """Regenerate the complete status; no private fields or old graph data pass through."""
     air_verified = verify_preflight(preflight, iso_day(updated_at))
+    model_id = active_release(registry)
+    require(model_id is None or full is not None, "Active release requires an audited full run and held-out evaluation")
     require(air_verified or all(row is None for row in (smoke, benchmark, full)),
             "Training audits require the independent AIR dataset checksum")
     require((smoke is not None or benchmark is None) and (benchmark is not None or full is None),
@@ -327,6 +396,22 @@ def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, fu
                           + (" This is not the authors’ exact training cohort." if audit["cohort"]["approximate"] else ""))
         series.append(make_series("train-archive-size", "Full-run milestone checkpoint size", "MiB",
                                   ((row["step"], row["archive_bytes"] / MIB) for row in audit["retained"])))
+        if "learning_curves" in full:
+            charts, coverage = series_training(full["learning_curves"], step)
+            series.extend(charts)
+            first, last = coverage["first_logged_step"], coverage["last_logged_step"]
+            if first is None:
+                note = " The final verified allocation produced no scheduled learning log rows. No learning curve is shown."
+            elif not charts:
+                note = (f" The final verified allocation logged iterations {first:,}–{last:,}, but had no "
+                        "finite observations for the published metrics.")
+            else:
+                logged_span = f"iteration {first:,}" if first == last else f"iterations {first:,}–{last:,}"
+                note = f" Learning curves show sampled measurements at {logged_span} from the final audited allocation only."
+            if coverage["resumed_from_iterations"]:
+                note += f" Earlier allocations are not graphed (resumed at {coverage['resumed_from_iterations']:,})."
+            name, state, detail = label["train"]
+            label["train"] = (name, state, detail + note)
         method = (" with an approximate Appendix E selection" if audit["cohort"]["approximate"]
                   else " with the authors’ Appendix E clip manifest")
         summary = f"The pinned implementation completed the full single-GPU training target{method}. Held-out evaluation is pending."
@@ -339,6 +424,13 @@ def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, fu
             label["release"] = (label["release"][0], "waiting", "The audited checkpoint still needs a verified browser release.")
             summary = (f"Full single-GPU training{method} and independent held-out evaluation passed their audits. "
                        "Browser release is pending.")
+            if model_id is not None:
+                label["release"] = (label["release"][0], "verified",
+                                    f"Version {model_id} is the active audited in-browser policy release.")
+                summary = (f"Full single-GPU training{method} and independent held-out evaluation passed their audits. "
+                           f"Browser policy {model_id} is available.")
+        else:
+            require(model_id is None, "Active release requires verified held-out evaluation")
     return {
         "schemaVersion": 1,
         "updatedAt": updated_at,
@@ -358,17 +450,19 @@ def main() -> None:
     parser.add_argument("--smoke", type=Path, help="Verified smoke audit JSON")
     parser.add_argument("--benchmark", type=Path, help="Verified benchmark audit JSON")
     parser.add_argument("--full", type=Path, help="Verified full audit JSON, optionally with attached held-out evidence")
+    parser.add_argument("--registry", type=Path, help="Public model registry (verify artifacts separately with verify-release)")
     parser.add_argument("--output", required=True, type=Path, help="Status JSON to write and review separately from deployment")
     args = parser.parse_args()
     try:
-        paths = [path for path in (args.preflight, args.smoke, args.benchmark, args.full) if path is not None]
+        paths = [path for path in (args.preflight, args.smoke, args.benchmark, args.full, args.registry) if path is not None]
         require(all(path.resolve() != args.output.resolve() for path in paths),
                 "Output must not replace an audit or preflight input")
         inputs = {phase: read_json(path) if (path := getattr(args, phase)) is not None else None
                   for phase in RECIPE}
-        report = generate(read_json(args.preflight), args.date, **inputs)
+        registry = read_json(args.registry) if args.registry is not None else None
+        report = generate(read_json(args.preflight), args.date, **inputs, registry=registry)
         atomic_json(args.output, report)
-    except (OSError, ValueError, OverflowError, ZeroDivisionError) as exc:
+    except (OSError, ValueError, OverflowError, ZeroDivisionError, RecursionError) as exc:
         parser.exit(1, f"Phase summary rejected: {exc}\n")
 
 

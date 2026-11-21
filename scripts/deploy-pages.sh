@@ -9,7 +9,7 @@ source_commit=$1
 root=$(git rev-parse --show-toplevel)
 cd -- "$root"
 [[ $(git branch --show-current) == source && "$(git rev-parse HEAD)" == "$source_commit" ]]
-[[ -z "$(git status --porcelain --untracked-files=all -- public src scripts index.html package.json package-lock.json tsconfig.json vite.config.ts)" ]] ||
+[[ -z "$(git status --porcelain --untracked-files=all -- public src scripts training index.html package.json package-lock.json tsconfig.json vite.config.ts)" ]] ||
   { echo "Public build input differs from the committed source." >&2; exit 3; }
 
 git fetch --no-tags origin source main
@@ -35,6 +35,7 @@ GITHUB_PAGES=1 npm run build -- --outDir "$build"
 [[ -s "$build/index.html" && -f "$build/reproduction/preflight.json" &&
    -f "$build/reproduction/status.json" && -f "$build/models/releases.json" ]]
 node scripts/verify-release.mjs "$build"
+bash scripts/verify-phase-status.sh "$build"
 if [[ -n "$(find "$build" -type l -print -quit)" ]]; then
   echo 'Public builds must not contain symbolic links.' >&2; exit 4
 fi

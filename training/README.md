@@ -36,32 +36,41 @@ explicit transition boundary rather than claiming bitwise physics continuity.
    not the upstream CUDA 13 lock. The source pins are unchanged. Validate CUDA,
    MuJoCo Warp, and compilation in the allocated smoke before relying on the
    runtime. Record both environment and code archive hashes.
-4. Convert verified BONES input on gpu01 using `training/pack_bones.py`. Pass
-   the G1 XML from the pinned mjlab source
-   (`src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml`). Use
-   `--sha256 "$BONES_SHA256" --smoke-clips 64` for a bounded smoke input,
-   and `--sha256 "$BONES_SHA256" --keep-list "$PRIVATE_CLIP_LIST"
-   --keep-list-sha256 "$PRIVATE_CLIP_LIST_SHA256" --selection-id "$COHORT_ID"`
-   for the reviewed full selection. `COHORT_ID` is `supermimic-v3-authors-manifest`
-   or `supermimic-v3-appendix-e-approx-v1`. The pinned loader does not accept BONES CSVs.
-   The converter resamples 120 Hz CSV to 50 Hz, converts units, and writes the
-   packed root pose/twist and joint arrays. Keep the list and packed motions
-   private. The pins do not include the paper's exact 129,514-clip list; audit
-   the actual filter, clip count and selection hash and do not claim exact
-   Appendix E parity without evidence. A separately reviewed
-   [approximate selector](BONES_SELECTION.md) is available if the authors'
-   list cannot be obtained. For the bounded smoke, `prepare_air_smoke.sh`
-   verifies both input hashes, confirms the pinned loader can read the smoke
-   arrays on CPU, and atomically publishes a private compressed smoke package.
-5. On gpu01, package each packed-motion directory at the archive root
-   (`tar -C "$PACKED_DIR" -czf "$MOTIONS_TGZ" .`) and compute SHA-256. Stage
-   `environment.tar.gz`, `code.tar.gz` and `SHA256SUMS` together in a new
+4. On gpu01, use `training/prepare_air_smoke.sh` for the bounded 64-clip smoke.
+   It verifies both input hashes, confirms the pinned loader can read the
+   packed arrays on CPU, and atomically publishes a private compressed smoke
+   package. Use the CPU batch job below for the full pool. Both paths use the
+   pinned mjlab G1 scene and `pack_bones.py` to resample 120 Hz CSVs to 50 Hz
+   and write the root pose/twist and joint arrays the pinned loader expects.
+   Keep the packed motions and clip list private. The pins do not ship the
+   authors' exact 129,514-clip list; audit the actual clip count, filter and
+   selection hash. Use the [approximate selector](BONES_SELECTION.md) only
+   with explicit approval, and do not claim exact Appendix E parity.
+5. Stage `environment.tar.gz`, `code.tar.gz` and `SHA256SUMS` together in a new
    private version with `training/package_air_inputs.sh` (the checksum file
    lists exactly the two archive basenames). The code archive includes
    `run.sh` as its entry point. Reuse this exact package for the benchmark,
    full run, and evaluation after a successful smoke.
    Follow the runbook to publish verified versions to the approved shared
    project path. Confirm scratch and archive quotas using actual sizes.
+
+For the full pool, run conversion on allocated scratch using a CPU-only
+allocation. Pass a normalized, privately reviewed authors' allowlist and its
+SHA-256 as the final two arguments. The allowlist must contain one exact
+archive member (`g1/csv/DATE/MOTION.csv`) per line, with no header or duplicate:
+
+```sh
+env -u BASH_ENV -u ENV lab-submit --kind cpu -- --parsable --chdir="$SHARED_PROJECT" \
+  --output="$LOGS/%j.out" --error="$LOGS/%j.err" \
+  "$CODE/run_prepare_motions.sbatch" "$PACKAGE" "$SHARED_BONES_ARCHIVE" "$BONES_SHA256" \
+  "$PRIVATE_MOTIONS_ROOT" "$COHORT_BUILD_ID" authors-manifest "$PRIVATE_CLIP_LIST" "$PRIVATE_CLIP_LIST_SHA256"
+```
+
+If explicitly approved to use the approximation, replace the last three
+arguments with `--accept-approximate "$PINNED_SONIC_SOURCE" "$PINNED_SONIC_SOURCE_SHA256"`.
+Verify the Slurm terminal status, `SUCCESS`, `job-status.txt`, preparation
+metadata and archive checksum before passing the same packed input to the
+benchmark and full run. Neither the allowlist nor the packed motions are public.
 
 Training data includes Motion Data by [Bones Studio](https://bones.studio/).
 Use of the underlying dataset is subject to the BONES Motion Capture Dataset
@@ -112,3 +121,7 @@ the exact target in the latest checkpoint, and the attempt's `SUCCESS` and
 `job-status.txt`. See [held-out evaluation and audits](HELD_OUT_EVAL.md) and
 [browser release](../docs/research/CUSTOM_MODEL_SIMULATION.md). Keep checkpoint
 archives, data, credentials and raw logs private.
+
+After audit or interruption, copy explicit checkpoint and attempt publications
+to the independent private gpu01 archive using [the backup helper](AIR_BACKUPS.md).
+Keep the terminal Slurm records under the approved private manifests root.

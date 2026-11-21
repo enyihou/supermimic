@@ -12,6 +12,8 @@ import subprocess
 import tarfile
 from pathlib import Path, PurePosixPath
 
+from audit_training_metrics import METRICS_MEMBER, learning_curves, parse_metrics
+
 
 SOURCE_COMMITS = {
     "supermimic": "5fb92297ab4fe3d86629d9f0c635334791bb0d5f",
@@ -87,7 +89,8 @@ def verify_hashes(root: Path, required: set[str]) -> dict[str, str]:
     return entries
 
 
-def read_tar(path: Path, capture: set[str]) -> tuple[dict[str, str], dict[str, bytes], dict[str, int]]:
+def read_tar(path: Path, capture: set[str], *, metrics: dict | None = None
+             ) -> tuple[dict[str, str], dict[str, bytes], dict[str, int]]:
     """Read (not extract) the compressed artifacts without loading models into RAM."""
     hashes: dict[str, str] = {}
     contents: dict[str, bytes] = {}
@@ -109,7 +112,11 @@ def read_tar(path: Path, capture: set[str]) -> tuple[dict[str, str], dict[str, b
             sizes[name] = member.size
             stream = archive.extractfile(member)
             assert stream is not None
-            if name in capture:
+            if metrics is not None and name == METRICS_MEMBER:
+                parsed = parse_metrics(stream, member.size)
+                metrics.update(parsed)
+                hashes[name] = parsed["sha256"]
+            elif name in capture:
                 require(member.size <= MAX_SMALL_FILE, "control file exceeds size limit")
                 data = stream.read()
                 require(len(data) == member.size, "truncated archive member")
@@ -168,7 +175,8 @@ def capture_slurm(job_id: str) -> dict:
 
 
 def verify_success(attempt: Path, job_id: str, slurm_record: Path,
-                   extra: set[str]) -> tuple[dict[str, bytes], dict[str, str]]:
+                   extra: set[str], *, metrics: dict | None = None
+                   ) -> tuple[dict[str, bytes], dict[str, str]]:
     require(JOB_ID.fullmatch(job_id) is not None, "expected a numeric Slurm job ID")
     slurm = json.loads(slurm_record.read_text(encoding="utf-8"))
     require(slurm.get("source") == "scontrol show job -o" and slurm.get("job_id") == job_id
@@ -181,7 +189,7 @@ def verify_success(attempt: Path, job_id: str, slurm_record: Path,
     require(status.get("job_id") == job_id and status.get("exit_code") == "0"
             and status.get("reason") == "completed",
             "private job status does not match the successful Slurm allocation")
-    _, outputs, _ = read_tar(attempt / "outputs.tar.gz", {"job-status.txt", *extra})
+    _, outputs, _ = read_tar(attempt / "outputs.tar.gz", {"job-status.txt", *extra}, metrics=metrics)
     require(outputs.get("job-status.txt") == status_text.encode(), "archive job status mismatch")
     require(extra <= outputs.keys(), "attempt archive is missing required output")
     return outputs, attempt_hashes
@@ -198,8 +206,9 @@ def verify_run(args: argparse.Namespace) -> dict:
     expected_outputs = {"result.json", "run-identity.json", "environment.json"}
     if args.phase == "benchmark":
         expected_outputs.add("checkpoints.jsonl")
+    parsed_metrics = {} if args.phase == "full" else None
     outputs, attempt_hashes = verify_success(
-        attempt, args.job_id, args.slurm_record, expected_outputs,
+        attempt, args.job_id, args.slurm_record, expected_outputs, metrics=parsed_metrics,
     )
     identity = json.loads(outputs["run-identity.json"])
     result = json.loads(outputs["result.json"])
@@ -344,6 +353,11 @@ def verify_run(args: argparse.Namespace) -> dict:
                 320000 / steady_speed + 320 * average_checkpoint),
             "checkpoint_samples": samples,
         }
+    elif args.phase == "full":
+        log_interval = config["runner_cfg"].get("log_interval")
+        audit["learning_curves"] = learning_curves(
+            parsed_metrics or None, resumed_from, args.iterations, log_interval, elapsed,
+        )
     return audit
 
 

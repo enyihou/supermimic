@@ -128,6 +128,55 @@ test('full structural audit and runnable assets; invalid provenance and altered 
   await json(auditFile, full)
   assert.equal(await verifyRelease(pub), modelId)
 
+  const curve = {
+    schema_version: 1,
+    coverage: { scope: 'final-allocation-only', resumed_from_iterations: 319_960, log_interval: 10,
+      first_logged_step: 319_961, last_logged_step: 319_991, logged_rows: 4 },
+    metrics_jsonl_sha256: identity('bounded private metrics'),
+    series: [{ id: 'train-episode-reward', observation_count: 2, points: [{ step: 319_961, value: -2 }, { step: 319_991, value: 4 }] },
+      { id: 'train-world-model-loss', observation_count: 1, points: [{ step: 319_981, value: 0.05 }] }],
+  }
+  await json(auditFile, { ...full, learning_curves: curve })
+  assert.equal(await verifyRelease(pub), modelId)
+  const { held_out_evaluation: _evaluation, ...trainingOnly } = full
+  trainingOnly.held_out_evaluation_verified = false
+  trainingOnly.verified_checks = full.verified_checks.filter((check) => check !== 'held_out_evaluation')
+  await json(registry, { schema_version: 1, active: null })
+  const staged = join(pub, 'unpublished-release-temp')
+  await rename(release, staged)
+  await json(auditFile, { ...trainingOnly, learning_curves: curve })
+  assert.equal(await verifyRelease(pub), null)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, coverage: { ...curve.coverage, private_path: 'not a public field' } } })
+  await assert.rejects(verifyRelease(pub), /coverage is invalid/)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, coverage: { ...curve.coverage, logged_rows: 3 } } })
+  await assert.rejects(verifyRelease(pub), /row count/)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, coverage: {
+    ...curve.coverage, first_logged_step: 319_971, logged_rows: 3,
+  } } })
+  await assert.rejects(verifyRelease(pub), /coverage row count/)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, series: [...curve.series, curve.series[1]] } })
+  await assert.rejects(verifyRelease(pub), /series ID, ordering or point count/)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, series: [{ ...curve.series[0], observation_count: 1,
+    points: [{ step: 319_992, value: 1 }] }] } })
+  await assert.rejects(verifyRelease(pub), /logged step cadence/)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, series: [{ ...curve.series[1],
+    points: [{ step: 319_981, value: -1 }] }] } })
+  await assert.rejects(verifyRelease(pub), /bounded aggregate/)
+  await json(auditFile, { ...trainingOnly, learning_curves: { ...curve, coverage: {
+    ...curve.coverage, resumed_from_iterations: 320_000, first_logged_step: null, last_logged_step: null, logged_rows: 0,
+  }, series: [], metrics_jsonl_sha256: null } })
+  assert.equal(await verifyRelease(pub), null)
+  await json(auditFile, { ...trainingOnly, held_out_evaluation: { metrics } })
+  await assert.rejects(verifyRelease(pub), /Full audit must verify/)
+  await json(auditFile, trainingOnly)
+  await json(preflightFile, { ...preflight, dataset: { ...preflight.dataset, air_sha256_verified: false } })
+  await assert.rejects(verifyRelease(pub), /verified locally and after AIR transfer/)
+  await json(preflightFile, preflight)
+  await rename(staged, release)
+  await json(registry, { schema_version: 1, active: modelId })
+  await assert.rejects(verifyRelease(pub), /held-out evaluation before model publication/)
+  await json(auditFile, full)
+
   await json(preflightFile, { ...preflight, dataset: { ...preflight.dataset, air_sha256_verified: false } })
   await assert.rejects(verifyRelease(pub), /verified locally and after AIR transfer/)
   await json(preflightFile, preflight)

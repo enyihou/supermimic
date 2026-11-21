@@ -27,7 +27,7 @@ printf '%s\n' "$revision" > "$build/package/REPRODUCTION_COMMIT.txt"
 git -C "$here" show "$revision:training/run.sh" > "$build/package/run.sh"
 chmod 700 "$build/package/run.sh"
 
-for item in air_checkpoint.py air_launch.py air_runner.patch audit_official.py evaluate_heldout.py \
+for item in air_checkpoint.py air_launch.py air_runner.patch audit_official.py audit_training_metrics.py evaluate_heldout.py \
   lafan1_g1_eval_manifest.tsv inspect_bones.py pack_bones.py select_bones_clips.py; do
   git -C "$here" show "$revision:training/$item" > "$build/package/training/$item"
 done
