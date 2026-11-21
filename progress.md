@@ -7,6 +7,8 @@ Last updated: 2026-11-21
 - Audited the current workspace and confirmed it is not a Git checkout, while `enyihou/supermimic` `main` is the deployed GitHub Pages artifact.
 - Preparing a `source` branch containing the complete Vite app, local official runtime assets, server gate, research notes, and training launchers so the live Pages branch remains available.
 - Confirmed the training launchers and current model assets are present. The browser app currently has the official runtime and an independent native route, but no second custom-checkpoint simulation route yet.
+- Documented the custom-model integration boundary in `docs/research/CUSTOM_MODEL_SIMULATION.md` and added the follow-on work to `task_plan.md`.
+- Pushed the complete source project to `enyihou/supermimic` on the `source` branch. The deployed Pages `main` branch remains unchanged.
 
 ## Demo rebuild
 

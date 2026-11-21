@@ -38,6 +38,13 @@ Build a fresh local interactive browser simulation inspired by `https://supermim
 - Use AIR local scratch for compute and an approved durable archive path for resumable outputs.
 - Do not submit the full BONES-SEED run until access and storage prerequisites are available.
 
+## Planned website extension
+
+- After a checkpoint is trained and verified, export it into a browser-readable inference package.
+- Add a versioned custom-model route alongside the published reference simulation.
+- Keep the custom model behind the authenticated server deployment and expose only the UI gate on static Pages.
+- Use the native Three.js stage as the first integration surface, then add comparison controls and responsive QA.
+
 ## Pending
 
 - Obtain approved BONES-SEED access.
