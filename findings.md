@@ -29,3 +29,9 @@
 - The strongest initial experiment is frozen-teacher distillation with matched action-only, action-plus-action-change, and tuned smoothing controls. Evaluate nominal tracking, pushed recovery, contact groups, clipping, and compute-matched performance.
 - The selected independent reproduction actor loads safely and produces finite 29-dimensional actions from ten history frames and future reference features. A short CUDA smoke on one AIR A800 completed in 73.7 seconds including simulator compilation. Two nominal and two of four disturbed cases met the early 0.30 m recovery gate.
 - Full training remains pending approved BONES-SEED access and an authorized writable AIR archive path. The G1 dataset is gated and approximately 23.5 GB compressed.
+
+## BONES-SEED access
+
+- BONES-SEED is the Bones Studio motion-capture dataset used to supply diverse human motion trajectories for humanoid robotics. Its dataset card lists 142,220 annotated motions, including Unitree G1 MuJoCo-compatible CSV trajectories and metadata.
+- The Hugging Face dataset is access-controlled. A user must sign in, accept the dataset conditions and license, and then download the archive. The current official launcher only needs the private `g1.tar.gz` archive containing the `g1/` motion tree.
+- The dataset archive must stay in private storage. The public GitHub repository should contain only the download instructions, source revision, archive checksum, filtered-clip manifest, audit summaries, and graphs.

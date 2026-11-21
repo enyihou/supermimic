@@ -24,6 +24,11 @@ Last updated: 2026-11-21
 - Recorded the release rule that GitHub receives source, manifests, checksums, audit reports, and sanitized graphs. Gated data, credentials, and private checkpoints remain in private storage.
 - Recorded that the higher-order supervision work and browser inference export are separate milestones. They cannot be assumed to complete in the same overnight training job.
 
+## BONES-SEED clarification
+
+- Confirmed from the dataset card that BONES-SEED contains 142,220 annotated motions with Unitree G1 MuJoCo-compatible trajectories and requires accepting access conditions and its license before download.
+- Recorded that the immediate user action is to obtain the private `g1.tar.gz` archive and provide its path plus an approved private archive destination for backups.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.
