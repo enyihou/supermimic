@@ -8,6 +8,7 @@ import io
 import itertools
 import json
 from pathlib import Path
+import re
 import shutil
 import tarfile
 import tempfile
@@ -21,6 +22,8 @@ from inspect_bones import parse_header
 
 INPUT_FPS = 120
 TARGET_FPS = 50
+APPROXIMATION_ID = "supermimic-v3-appendix-e-approx-v1"
+EXACT_SELECTION_ID = "supermimic-v3-authors-manifest"
 FIELDS = {
     "root_pos_w": 3,
     "root_quat_w": 4,
@@ -79,10 +82,31 @@ def robot_joints(xml: Path) -> list[str]:
     return joints
 
 
+def verified_allowlist(path: Path, expected_sha: str, kind: str) -> tuple[set[str], dict]:
+    source = path.read_bytes()
+    if hashlib.sha256(source).hexdigest() != expected_sha:
+        raise ValueError("Allowlist SHA-256 mismatch")
+    entries = source.decode("utf-8").splitlines()
+    keep = set(entries)
+    names_valid = all(re.fullmatch(r"g1/csv/[^/\\\x00]+/[^/\\\x00]+\.csv", item)
+                      and ".." not in item.split("/") for item in keep)
+    if not keep or len(keep) != len(entries) or not names_valid:
+        raise ValueError("Invalid or repeated allowlist entries")
+    if kind == EXACT_SELECTION_ID and len(keep) != 129_514:
+        raise ValueError("The authors' manifest must contain 129514 clip entries")
+    if kind not in {APPROXIMATION_ID, EXACT_SELECTION_ID}:
+        raise ValueError("Unsupported full motion cohort")
+    return keep, {"selection_id": kind, "allowlist_sha256": expected_sha,
+                  "approximate": kind == APPROXIMATION_ID}
+
+
 def pack(archive: Path, dest: Path, joints: list[str], *, source_sha: str,
-         keep: set[str] | None, smoke_clips: int | None, workers: int) -> dict:
+         keep: set[str] | None, smoke_clips: int | None, workers: int,
+         cohort: dict | None = None) -> dict:
     if dest.exists() or dest.is_symlink():
         raise FileExistsError(dest)
+    if (keep is None) == (smoke_clips is None) or (keep is not None) != (cohort is not None):
+        raise ValueError("Select either a bounded smoke or a verified private full cohort")
     with archive.open("rb") as source:
         if hashlib.file_digest(source, "sha256").hexdigest() != source_sha:
             raise ValueError("Source archive SHA-256 mismatch")
@@ -149,6 +173,7 @@ def pack(archive: Path, dest: Path, joints: list[str], *, source_sha: str,
             for name, values in [("joint_names", joints), ("motion_names", names)]:
                 (out / f"{name}.json").write_text(json.dumps(values) + "\n")
             manifest = {
+                **(cohort or {}),
                 "dataset_sha256": source_sha,
                 "clipset_sha256": clipset.hexdigest(),
                 "clips": len(ends), "frames": frames,
@@ -170,21 +195,23 @@ def main() -> None:
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--smoke-clips", type=int, help="Small deterministic archive-order sample")
     selection.add_argument("--keep-list", type=Path, help="Private allowlist of exact tar member names")
+    parser.add_argument("--keep-list-sha256", help="Independently reviewed private allowlist SHA-256")
+    parser.add_argument("--selection-id", choices=[APPROXIMATION_ID, EXACT_SELECTION_ID])
     args = parser.parse_args()
     if not 1 <= args.workers <= 32 or args.smoke_clips is not None and not 1 <= args.smoke_clips <= 128:
         parser.error("workers must be 1–32; smoke clips must be 1–128")
-    keep = None
+    keep = cohort = None
     if args.keep_list:
-        entries = args.keep_list.read_text().splitlines()
-        keep = set(entries)
-        if not entries or len(entries) != len(keep) or not all(
-            name.startswith("g1/csv/") and name.endswith(".csv") for name in keep
-        ):
-            parser.error("invalid or repeated keep-list entries")
+        if not args.selection_id or not re.fullmatch(r"[0-9a-f]{64}", args.keep_list_sha256 or ""):
+            parser.error("a full keep list requires --selection-id and --keep-list-sha256")
+        keep, cohort = verified_allowlist(args.keep_list, args.keep_list_sha256, args.selection_id)
+    elif args.selection_id or args.keep_list_sha256:
+        parser.error("full cohort options are not for the bounded smoke")
     args.output_directory.parent.mkdir(parents=True, exist_ok=True)
     result = pack(
         args.archive, args.output_directory, robot_joints(args.g1_xml),
         source_sha=args.sha256, keep=keep, smoke_clips=args.smoke_clips, workers=args.workers,
+        cohort=cohort,
     )
     print(json.dumps(result, indent=2))
 

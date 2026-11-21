@@ -64,6 +64,8 @@ python3 training/select_bones_clips.py \
 On success the output directory contains `keep.txt` (exact tar member
 names, suitable for `pack_bones.py --keep-list`), `summary.json` (counts,
 configuration and hashes), and `SHA256SUMS`. Keep the member list private.
+Use the verified `keep.txt` digest with `--keep-list-sha256` and use
+`--selection-id supermimic-v3-appendix-e-approx-v1` when packing this cohort.
 Any published summary must only include aggregates and fingerprints; do not
 publish the names, source CSVs, or resulting motion arrays. Keep
 `approximate: true` in downstream provenance.

@@ -28,7 +28,7 @@ and suite manifest when building `code.tar.gz`. All environment, model, suite,
 and logs are staged on allocated scratch; no Hub or W&B is used by the job.
 
 ```sh
-lab-submit --kind gpu -- --parsable \
+env -u BASH_ENV -u ENV lab-submit --kind gpu -- --parsable --chdir="$SHARED_PROJECT" \
   --output="$PRIVATE_LOGS/%j.out" --error="$PRIVATE_LOGS/%j.err" \
   training/run_eval.sbatch "$PACKAGE_DIR" "$CHECKPOINT_DIR" "$LAFAN1_ARCHIVE" \
   "$LAFAN1_SHA256" "$BONES_SHA256" "$PRIVATE_EVALUATIONS_ROOT"

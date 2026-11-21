@@ -46,10 +46,21 @@ class PhaseAuditTest(unittest.TestCase):
         local.mkdir()
         for name in ("actor", "world_model", "critic", "training_state"):
             (local / f"{name}.pt").write_bytes(f"{name} {step}".encode())
+        motion = {
+            "sha256": "1" * 64, "clipset_sha256": "2" * 64,
+            "clips": 64, "frames": 1000, "input_fps": 120, "fps": 50,
+            "selection": "archive-order-smoke",
+        } if self.args.phase == "smoke" else {
+            "sha256": "1" * 64, "clipset_sha256": "2" * 64,
+            "clips": 129_514, "frames": 47_000_000, "input_fps": 120, "fps": 50,
+            "selection": "explicit-allowlist", "selection_id": "supermimic-v3-authors-manifest",
+            "approximate": False, "allowlist_sha256": "3" * 64,
+        }
+        self.identity["motion_manifest"] = motion
         self.write_json(local / "run-config.json", {
             **self.identity, "runner_cfg": {"max_iterations": self.args.iterations},
             "env_cfg": {"scene": {"num_envs": self.args.num_envs}, "private": "/do-not-publish"},
-            "motion_clips": 20, "motion_frames": 1000, "motion_fps": 50,
+            "motion_clips": motion["clips"], "motion_frames": motion["frames"], "motion_fps": 50,
             "milestone_interval": 32000,
         })
         return publish_checkpoint(local, self.run / "checkpoints", self.identity, step, job,
@@ -91,7 +102,7 @@ class PhaseAuditTest(unittest.TestCase):
                 "resumed_from_iterations": step if job_final != job_checkpoint else 0,
                 "loop_elapsed_seconds": 5.0,
             },
-            "environment.json": {"num_cuda_devices": 1, "job_id": job_final},
+            "environment.json": {"num_cuda_devices": 1, "cuda_available": True, "job_id": job_final},
         }
         if self.args.phase == "benchmark":
             payload["checkpoints.jsonl"] = [

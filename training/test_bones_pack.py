@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 
 from inspect_bones import BASE_COLUMNS, inspect
-from pack_bones import FIELDS, TARGET_FPS, convert, pack
+from pack_bones import APPROXIMATION_ID, EXACT_SELECTION_ID, FIELDS, TARGET_FPS, convert, pack, verified_allowlist
 
 
 JOINTS = [f"test_{idx}_joint" for idx in range(29)]
@@ -65,6 +65,20 @@ class BonesPackTest(unittest.TestCase):
                 archive.addfile(member)
             with self.assertRaisesRegex(ValueError, "Unsafe member"):
                 inspect(source, 0)
+
+    def test_explicit_full_allowlist_hash_and_approximation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "keep.txt"
+            path.write_text("g1/csv/day/fixture.csv\n")
+            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            keep, cohort = verified_allowlist(path, sha, APPROXIMATION_ID)
+            self.assertEqual(keep, {"g1/csv/day/fixture.csv"})
+            self.assertEqual(cohort["allowlist_sha256"], sha)
+            self.assertTrue(cohort["approximate"])
+            with self.assertRaisesRegex(ValueError, "129514"):
+                verified_allowlist(path, sha, EXACT_SELECTION_ID)
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                verified_allowlist(path, "0" * 64, APPROXIMATION_ID)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ import tempfile
 import numpy as np
 
 from inspect_bones import EXPECTED_CLIPS, issparse
-from pack_bones import TARGET_FPS, convert, robot_joints
+from pack_bones import APPROXIMATION_ID, TARGET_FPS, convert, robot_joints
 
 
 PAPER = "https://arxiv.org/pdf/2610.28480v3"
@@ -97,7 +97,6 @@ class Gates:
 
 # These data thresholds are versioned as part of the protocol, not CLI tuning knobs.
 GATES = Gates()
-APPROXIMATION_ID = "supermimic-v3-appendix-e-approx-v1"
 
 
 def sustained(mask: np.ndarray, frames: int) -> bool:
@@ -308,7 +307,7 @@ def select(args: argparse.Namespace) -> dict:
     parent = output.parent.stat()
     if (
         output.is_relative_to(root) or output.exists() or output.is_symlink()
-        or parent.st_uid != os.getuid() or stat.S_IMODE(parent.st_mode) != 0o700
+        or parent.st_uid != os.getuid() or stat.S_IMODE(parent.st_mode) not in {0o700, 0o2700}
     ):
         raise ValueError("Expected a new output directory under an owner-only parent outside the repo")
     if sha256(args.g1_xml) != G1_XML_SHA256 or TARGET_FPS != 50:

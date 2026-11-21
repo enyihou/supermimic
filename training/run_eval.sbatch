@@ -23,6 +23,13 @@ for variable in ${!CONDA_@} ${!_CONDA_@}; do unset "$variable"; done
 unset _CE_CONDA _CE_M
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+owner_only_directory() {
+  local mode
+  [[ -d "$1" && ! -L "$1" && -O "$1" ]] || return 1
+  mode=$(stat -c '%a' -- "$1") || return 1
+  # Project trees commonly inherit setgid. The rwx mode must still be 0700.
+  (( (8#$mode & 0777) == 0700 ))
+}
 [[ $# == 6 ]] || fail 'Expected six arguments; see script usage.'
 [[ "${SLURM_JOB_ID:-}" =~ ^[1-9][0-9]*$ && "${SLURM_JOB_NUM_NODES:-${SLURM_NNODES:-}}" == 1 ]] ||
   fail 'Expected a single-node Slurm batch allocation.'
@@ -34,7 +41,7 @@ checkpoint_dir=$(realpath -e -- "$2")
 suite=$(realpath -e -- "$3")
 results=$(realpath -e -- "$6")
 [[ -d "$package_dir" && -d "$checkpoint_dir" && -f "$suite" ]] || fail 'Missing package or input.'
-[[ -d "$results" && $(stat -c '%a:%u' -- "$results") == "700:$UID" ]] ||
+owner_only_directory "$results" ||
   fail 'Evaluation destination must be approved and owner-only.'
 attempt="$results/$SLURM_JOB_ID"
 [[ ! -e "$attempt" && ! -L "$attempt" ]] || fail 'Evaluation allocation was already published.'
@@ -99,7 +106,7 @@ if [[ -x "$work/env/bin/conda-unpack" ]]; then
   # shellcheck source=/dev/null
   source "$work/env/bin/activate"
   set -u
-  "$work/env/bin/conda-unpack"
+  "$work/env/bin/python" "$work/env/bin/conda-unpack"
 fi
 [[ -x "$work/env/bin/python" ]] || fail 'Staged Python executable unavailable.'
 export PATH="$work/env/bin:$PATH"

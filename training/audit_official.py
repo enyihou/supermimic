@@ -204,13 +204,40 @@ def verify_run(args: argparse.Namespace) -> dict:
     identity = json.loads(outputs["run-identity.json"])
     result = json.loads(outputs["result.json"])
     environment = json.loads(outputs["environment.json"])
-    require(environment.get("num_cuda_devices") == 1 and environment.get("job_id") == args.job_id,
+    require(environment.get("num_cuda_devices") == 1 and environment.get("cuda_available") is True
+            and environment.get("job_id") == args.job_id,
             "training process did not verify one CUDA device")
+    motion = identity.get("motion_manifest")
+    require(isinstance(motion, dict) and all(
+        isinstance(motion.get(key), str) and SHA256.fullmatch(motion[key])
+        for key in ("sha256", "clipset_sha256")
+    ), "invalid packed motion provenance")
+    cohort = {key: motion.get(key) for key in ("sha256", "clipset_sha256", "clips", "frames",
+                                               "input_fps", "fps", "selection")}
+    require(type(cohort["clips"]) is int and cohort["clips"] > 0
+            and type(cohort["frames"]) is int and cohort["frames"] >= 2 * cohort["clips"]
+            and cohort["input_fps"] == 120 and cohort["fps"] == 50,
+            "invalid packed motion counts or sample rates")
+    if args.phase == "smoke":
+        require(cohort["clips"] == 64 and cohort["selection"] == "archive-order-smoke",
+                "wrong smoke motion selection")
+    else:
+        selection_id = motion.get("selection_id")
+        approximate = motion.get("approximate")
+        allowlist_sha = motion.get("allowlist_sha256")
+        require(cohort["selection"] == "explicit-allowlist"
+                and selection_id in {"supermimic-v3-authors-manifest", "supermimic-v3-appendix-e-approx-v1"}
+                and approximate is (selection_id == "supermimic-v3-appendix-e-approx-v1")
+                and (approximate or cohort["clips"] == 129_514)
+                and isinstance(allowlist_sha, str) and SHA256.fullmatch(allowlist_sha),
+                "invalid full motion selection")
+        cohort.update(selection_id=selection_id, approximate=approximate, allowlist_sha256=allowlist_sha)
     checkpoint = args.run / "checkpoints" / f"step-{args.iterations:09d}"
     meta, config, hashes, archive_sha = verify_checkpoint(checkpoint)
     expected = {"source_commits": SOURCE_COMMITS, "reproduction_commit": args.reproduction_commit,
                 "dataset_sha256": args.dataset_sha256,
                 "motion_archive_sha256": args.motion_sha256, "code_sha256": args.code_sha256,
+                "motion_manifest": cohort,
                 "environment_sha256": args.environment_sha256, "mode": args.phase,
                 "num_envs": args.num_envs, "max_iterations": args.iterations,
                 "task_id": "SuperMimic-GenCoord-G1", "run_id": args.run.name}
@@ -226,8 +253,9 @@ def verify_run(args: argparse.Namespace) -> dict:
     require(config.get("runner_cfg", {}).get("max_iterations") == args.iterations
             and config.get("env_cfg", {}).get("scene", {}).get("num_envs") == args.num_envs,
             "stored runner config does not match the expected iteration target")
-    require(config.get("motion_clips", 0) > 0 and config.get("motion_frames", 0) > 0,
-            "run config lacks actual loaded motion counts")
+    require(config.get("motion_clips") == cohort["clips"]
+            and config.get("motion_frames") == cohort["frames"] and config.get("motion_fps") == cohort["fps"],
+            "run's loaded motion arrays differ from the packed motion manifest")
     require((args.run / "checkpoints" / "latest").readlink() == Path(checkpoint.name),
             "rolling checkpoint alias does not point at the verified final step")
     elapsed = result.get("loop_elapsed_seconds")
@@ -273,6 +301,7 @@ def verify_run(args: argparse.Namespace) -> dict:
         "retained_checkpoints": retained,
         "motions": {"clips": config["motion_clips"], "frames": config["motion_frames"],
                     "fps": config["motion_fps"]},
+        "motion_manifest": cohort,
         "outputs_archive_sha256": attempt_hashes["outputs.tar.gz"],
         "verified_checks": ["slurm_terminal_state", "job_status", "success_marker",
                             "source_pins", "dataset_checksum", "packed_motion_checksum",

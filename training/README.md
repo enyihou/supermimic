@@ -40,8 +40,10 @@ explicit transition boundary rather than claiming bitwise physics continuity.
    the G1 XML from the pinned mjlab source
    (`src/mjlab/asset_zoo/robots/unitree_g1/xmls/g1.xml`). Use
    `--sha256 "$BONES_SHA256" --smoke-clips 64` for a bounded smoke input,
-   and `--sha256 "$BONES_SHA256" --keep-list "$PRIVATE_CLIP_LIST"` for the
-   reviewed full selection. The pinned loader does not accept BONES CSVs.
+   and `--sha256 "$BONES_SHA256" --keep-list "$PRIVATE_CLIP_LIST"
+   --keep-list-sha256 "$PRIVATE_CLIP_LIST_SHA256" --selection-id "$COHORT_ID"`
+   for the reviewed full selection. `COHORT_ID` is `supermimic-v3-authors-manifest`
+   or `supermimic-v3-appendix-e-approx-v1`. The pinned loader does not accept BONES CSVs.
    The converter resamples 120 Hz CSV to 50 Hz, converts units, and writes the
    packed root pose/twist and joint arrays. Keep the list and packed motions
    private. The pins do not include the paper's exact 129,514-clip list; audit
@@ -54,7 +56,10 @@ explicit transition boundary rather than claiming bitwise physics continuity.
 5. On gpu01, package each packed-motion directory at the archive root
    (`tar -C "$PACKED_DIR" -czf "$MOTIONS_TGZ" .`) and compute SHA-256. Stage
    `environment.tar.gz`, `code.tar.gz` and `SHA256SUMS` together in a new
-   private version (the checksum file lists exactly the two archive basenames).
+   private version with `training/package_air_inputs.sh` (the checksum file
+   lists exactly the two archive basenames). The code archive includes
+   `run.sh` as its entry point. Reuse this exact package for the benchmark,
+   full run, and evaluation after a successful smoke.
    Follow the runbook to publish verified versions to the approved shared
    project path. Confirm scratch and archive quotas using actual sizes.
 
@@ -65,22 +70,26 @@ License Agreement.
 ## Submit in order
 
 On gpu01, use `lab-submit`, with absolute job-visible paths and precreated
-private scheduler log directories. Set `CODE` to the directory of the reviewed
+private scheduler log directories. Set `SHARED_PROJECT` to the approved,
+job-visible working directory and `CODE` to the directory of the reviewed
 batch scripts; `DRIVER` is the absolute job-visible copy of `run_full.sbatch`.
 The run directories inside `$RUNS` are owner-only. Audit each job before moving
 to the next one.
 
 ```sh
-lab-submit --kind gpu -- --parsable --output="$LOGS/%j.out" --error="$LOGS/%j.err" \
+env -u BASH_ENV -u ENV lab-submit --kind gpu -- --parsable --chdir="$SHARED_PROJECT" \
+  --output="$LOGS/%j.out" --error="$LOGS/%j.err" \
   "$CODE/run_smoke.sbatch" "$DRIVER" "$PACKAGE" "$SMOKE_MOTIONS" "$SMOKE_SHA256" \
   "$BONES_SHA256" "$RUNS" "$SMOKE_RUN_ID"
 
-lab-submit --kind gpu -- --parsable --job-name=supermimic-benchmark --time=02:00:00 \
+env -u BASH_ENV -u ENV lab-submit --kind gpu -- --parsable --chdir="$SHARED_PROJECT" \
+  --job-name=supermimic-benchmark --time=02:00:00 \
   --output="$LOGS/%j.out" --error="$LOGS/%j.err" \
   "$CODE/run_full.sbatch" "$PACKAGE" "$FULL_MOTIONS" "$FULL_SHA256" \
   "$BONES_SHA256" "$RUNS" "$BENCH_RUN_ID" benchmark fresh
 
-lab-submit --kind gpu -- --parsable --output="$LOGS/%j.out" --error="$LOGS/%j.err" \
+env -u BASH_ENV -u ENV lab-submit --kind gpu -- --parsable --chdir="$SHARED_PROJECT" \
+  --output="$LOGS/%j.out" --error="$LOGS/%j.err" \
   "$CODE/run_full.sbatch" "$PACKAGE" "$FULL_MOTIONS" "$FULL_SHA256" \
   "$BONES_SHA256" "$RUNS" "$FULL_RUN_ID" full fresh
 ```

@@ -41,6 +41,13 @@ if [[ -r /etc/profile.d/nccl-cluster.sh ]]; then
 fi
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+owner_only_directory() {
+  local mode
+  [[ -d "$1" && ! -L "$1" && -O "$1" ]] || return 1
+  mode=$(stat -c '%a' -- "$1") || return 1
+  # Project trees commonly inherit setgid. The rwx mode must still be 0700.
+  (( (8#$mode & 0777) == 0700 ))
+}
 [[ $# -ge 6 && $# -le 8 ]] || fail 'Expected 6–8 positional arguments; see script usage.'
 [[ "${SLURM_JOB_ID:-}" =~ ^[0-9]+$ ]] || fail 'Run this script inside a Slurm batch allocation.'
 [[ "${SLURM_JOB_NUM_NODES:-${SLURM_NNODES:-}}" == 1 ]] || fail 'Expected one allocated node.'
@@ -54,7 +61,7 @@ case "$mode" in full|benchmark|smoke) ;; *) fail 'Invalid recipe.' ;; esac
 case "$resume" in fresh|resume) ;; *) fail 'Invalid continuation mode.' ;; esac
 
 runs_root=$(realpath -e -- "$5")
-[[ -d "$runs_root" && $(stat -c '%a:%u' -- "$runs_root") == "700:$UID" ]] ||
+owner_only_directory "$runs_root" ||
   fail 'PRIVATE_RUNS_ROOT must be an approved owner-only job-visible directory.'
 run_dir="$runs_root/$6"
 if [[ "$resume" == fresh ]]; then
@@ -62,7 +69,7 @@ if [[ "$resume" == fresh ]]; then
 else
   [[ -d "$run_dir/checkpoints" && ! -L "$run_dir" ]] || fail 'No private checkpoint directory to resume.'
 fi
-[[ $(stat -c '%a:%u' -- "$run_dir") == "700:$UID" ]] || fail 'Run directory must be owner-only.'
+owner_only_directory "$run_dir" || fail 'Run directory must be owner-only.'
 exec {lock_fd}>>"$run_dir/lock"
 flock -n "$lock_fd" || fail 'Another allocation owns the run lock.'
 mkdir -p -- "$run_dir/attempts"
@@ -223,7 +230,7 @@ if [[ -x "$work/env/bin/conda-unpack" ]]; then
   # shellcheck source=/dev/null
   source "$work/env/bin/activate"
   set -u
-  "$work/env/bin/conda-unpack"
+  "$work/env/bin/python" "$work/env/bin/conda-unpack"
 fi
 [[ -x "$work/env/bin/python" ]] || fail 'Staged Python executable unavailable.'
 export PATH="$work/env/bin:$PATH"
@@ -241,8 +248,8 @@ launching=1
   printf "%s\n" "$SLURM_STEP_ID" > "$1"
   shift
   exec "$@"
-' _ "$step_file" "$work/env/bin/python" -u "$work/code/training/air_launch.py" \
-  train "$mode" "$work/motions" "$work/code" "$4" "$3" > "$SM_OUTPUT_DIR/train.log" 2>&1 &
+' _ "$step_file" /bin/bash "$work/code/run.sh" \
+  "$mode" "$work/motions" "$4" "$3" > "$SM_OUTPUT_DIR/train.log" 2>&1 &
 child_pid=$!
 launching=0
 (( stop_code == 0 )) || exit "$stop_code"

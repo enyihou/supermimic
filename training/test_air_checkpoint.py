@@ -2,6 +2,7 @@ import importlib.util
 import os
 import random
 import signal
+import subprocess
 import tempfile
 import unittest
 from dataclasses import dataclass
@@ -15,10 +16,11 @@ from air_checkpoint import (
     find_resume_checkpoint,
     latest_checkpoint,
     publish_checkpoint,
+    sha256,
     unpack_checkpoint,
     write_json,
 )
-from air_launch import RECIPES, verify_final
+from air_launch import RECIPES, read_motion_manifest, verify_final, verify_motion_arrays
 
 
 class CheckpointContractTest(unittest.TestCase):
@@ -131,6 +133,85 @@ class CheckpointContractTest(unittest.TestCase):
         self.assertEqual(RECIPES["full"], (4096, 320000, 1000, 32000))
         self.assertEqual(RECIPES["benchmark"][0], RECIPES["full"][0])
         self.assertGreaterEqual(RECIPES["benchmark"][1], 1000)
+
+    def test_owner_only_directory_accepts_project_setgid_inheritance(self):
+        test_dir = self.work / "private-dir"
+        test_dir.mkdir()
+        inherited = test_dir / "child"
+        alias = self.work / "alias"
+        alias.symlink_to(test_dir, target_is_directory=True)
+        for script in ("run_full.sbatch", "run_eval.sbatch"):
+            source = Path(__file__).with_name(script).read_text()
+            start = source.index("owner_only_directory() {")
+            end = source.index("\n}", start) + 2
+            helper = source[start:end]
+            for mode, private in ((0o700, True), (0o2700, True), (0o2750, False), (0o707, False),
+                                  (0o600, False), (0o770, False)):
+                with self.subTest(script=script, mode=oct(mode)):
+                    test_dir.chmod(mode)
+                    call = subprocess.run(["bash", "-c", helper + '\nowner_only_directory "$1"', "_", test_dir])
+                    self.assertEqual(call.returncode, 0 if private else 1)
+            test_dir.chmod(0o2700)
+            if not inherited.exists():
+                inherited.mkdir(mode=0o700)
+            self.assertEqual(inherited.stat().st_mode & 0o2777, 0o2700)
+            for path, accepted in ((inherited, True), (alias, False)):
+                call = subprocess.run(["bash", "-c", helper + '\nowner_only_directory "$1"', "_", path])
+                self.assertEqual(call.returncode, 0 if accepted else 1)
+
+    def test_packed_manifest_binds_dataset_selection_and_recipe(self):
+        manifest = {
+            "dataset_sha256": self.identity["dataset_sha256"], "clipset_sha256": "a" * 64,
+            "clips": 64, "frames": 800, "input_fps": 120, "fps": 50,
+            "selection": "archive-order-smoke", "private_example": "private datum not recorded",
+        }
+        path = self.work / "motion-manifest.json"
+        write_json(path, manifest)
+        safe = read_motion_manifest(self.work, "smoke", manifest["dataset_sha256"])
+        self.assertEqual(safe["sha256"], sha256(path))
+        self.assertEqual(safe["clipset_sha256"], manifest["clipset_sha256"])
+        self.assertNotIn("private_example", safe)
+        with self.assertRaisesRegex(RuntimeError, "submitted BONES"):
+            read_motion_manifest(self.work, "smoke", "1" * 64)
+        for mode in ("benchmark", "full"):
+            with self.assertRaisesRegex(RuntimeError, "reviewed full motion selection"):
+                read_motion_manifest(self.work, mode, manifest["dataset_sha256"])
+        revised = {**manifest, "clips": 129514, "frames": 2000000, "selection": "explicit-allowlist",
+                   "selection_id": "supermimic-v3-authors-manifest", "allowlist_sha256": "c" * 64,
+                   "approximate": False}
+        write_json(path, revised)
+        self.assertEqual(read_motion_manifest(self.work, "full", revised["dataset_sha256"])["clips"], 129514)
+        write_json(path, {**revised, "approximate": True})
+        with self.assertRaisesRegex(RuntimeError, "cohort provenance"):
+            read_motion_manifest(self.work, "full", revised["dataset_sha256"])
+        with self.assertRaisesRegex(RuntimeError, "64-clip smoke"):
+            read_motion_manifest(self.work, "smoke", revised["dataset_sha256"])
+        write_json(path, {**manifest, "fps": 60})
+        with self.assertRaisesRegex(RuntimeError, "sample rates"):
+            read_motion_manifest(self.work, "smoke", manifest["dataset_sha256"])
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("numpy"), "optional array header cross-check requires numpy",
+    )
+    def test_packed_arrays_disagree_with_manifest(self):
+        import json
+        import numpy as np
+
+        manifest = {"clips": 2, "frames": 5, "fps": 50}
+        np.save(self.work / "motion_ends.npy", np.array([2, 5], dtype=np.int64), allow_pickle=False)
+        np.save(self.work / "fps.npy", np.array(50, dtype=np.int64), allow_pickle=False)
+        (self.work / "motion_names.json").write_text(json.dumps(["one", "two"]))
+        for field, width in (
+            ("joint_pos", 29), ("joint_vel", 29), ("root_pos_w", 3), ("root_quat_w", 4),
+            ("root_lin_vel_w", 3), ("root_ang_vel_w", 3),
+        ):
+            np.save(self.work / f"{field}.npy", np.zeros((5, width), dtype="<f4"))
+        verify_motion_arrays(self.work, manifest)
+        with self.assertRaisesRegex(RuntimeError, "clip/frame/rate"):
+            verify_motion_arrays(self.work, {**manifest, "frames": 6})
+        np.save(self.work / "joint_vel.npy", np.zeros((5, 28), dtype="<f4"))
+        with self.assertRaisesRegex(RuntimeError, "joint_vel"):
+            verify_motion_arrays(self.work, manifest)
 
     @unittest.skipUnless(
         importlib.util.find_spec("torch") and importlib.util.find_spec("numpy"),

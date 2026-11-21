@@ -24,6 +24,8 @@ export_pin supermimic "$supermimic"
 export_pin mjlab_research "$mjlab"
 printf 'supermimic=%s\nmjlab_research=%s\n' "$supermimic" "$mjlab" > "$build/package/PINS.txt"
 printf '%s\n' "$revision" > "$build/package/REPRODUCTION_COMMIT.txt"
+git -C "$here" show "$revision:training/run.sh" > "$build/package/run.sh"
+chmod 700 "$build/package/run.sh"
 
 for item in air_checkpoint.py air_launch.py air_runner.patch audit_official.py evaluate_heldout.py \
   lafan1_g1_eval_manifest.tsv inspect_bones.py pack_bones.py select_bones_clips.py; do
@@ -31,7 +33,7 @@ for item in air_checkpoint.py air_launch.py air_runner.patch audit_official.py e
 done
 git -C "$build/package/supermimic" apply --check "$build/package/training/air_runner.patch"
 tar -C "$build/package" --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -czf "$build/code.tar.gz" \
-  PINS.txt REPRODUCTION_COMMIT.txt supermimic mjlab_research training
+  PINS.txt REPRODUCTION_COMMIT.txt run.sh supermimic mjlab_research training
 sync -d "$build/code.tar.gz"
 mv -nT -- "$build/code.tar.gz" "$out"
 [[ ! -e "$build/code.tar.gz" ]]
