@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "phase": "dataset_preflight",
+  "status": "local_verified_air_transfer_pending",
+  "updated_utc": "2026-11-21",
+  "source_commits": {
+    "supermimic": "5fb92297ab4fe3d86629d9f0c635334791bb0d5f",
+    "mjlab_research": "379c55e88b1dec73f93943e524a879b2ebbf45c5"
+  },
+  "dataset": {
+    "id": "bones-studio/seed",
+    "revision": "2f59b2077b9da34dd4e43618e705c7cb962c9a66",
+    "archive": "g1.tar.gz",
+    "sha256": "52580ea8bced72ea9e2ff1e7b68f01c51c7f1099581e9a46b7c87e1dec106d8a",
+    "archive_bytes": 23499973647,
+    "csv_expanded_bytes": 51527587825,
+    "csv_files": 142220,
+    "local_sha256_verified": true,
+    "local_archive_members_verified": true,
+    "air_sha256_verified": false
+  }
+}
