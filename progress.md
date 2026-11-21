@@ -11,6 +11,12 @@ Last updated: 2026-11-21
 - Pushed the complete source project to `enyihou/supermimic` on the `source` branch. The deployed Pages `main` branch remains unchanged.
 - Verified `npm run build` after the documentation update and confirmed GitHub Pages reports the existing deployment as built.
 
+## Training status verification
+
+- Verified there is no official full SuperMimic run, completed job record, or SuperMimic checkpoint in this workspace.
+- The recorded compute result is a 73.7-second frozen-teacher CUDA smoke for the independent reproduction. It did not train a new SuperMimic model.
+- The official 320,000-iteration run remains a prepared launcher and is still pending BONES-SEED access and an authorized archive path.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.
