@@ -45,6 +45,11 @@ Last updated: 2026-11-21
 - Confirmed from the official runner that checkpoints are separate world-model, actor, and optional critic files. Comparable public runs range from roughly 69 MB to 223 MB per combined checkpoint.
 - Recorded the policy of keeping periodic checkpoints in private artifact storage and publishing only manifests, checksums, graphs, and a selected browser export to GitHub.
 
+## Storage capacity verification
+
+- The first SSH server has approximately 33 GB free on its root filesystem. It can temporarily hold the compressed BONES-SEED archive, with limited remaining headroom.
+- gpu01 has approximately 16 GB used in the user's `/home` quota and a 200 GB per-user working limit for `/home` and `/public` under the server guide. The private durable checkpoint path under `/data` still requires an approved project location.
+
 ## Demo rebuild
 
 - Read clone-website and planning-with-files instructions, plus the AIR server guide.

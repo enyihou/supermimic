@@ -39,6 +39,8 @@
 - The user's access topology is phone -> local SSH server -> AIR. The local SSH server is the download host when it has outbound HTTPS access. The AIR host has no outbound Hugging Face access.
 - A live upload or network-mounted dataset during training would add an avoidable failure mode. The archive should be fully staged before the job is submitted.
 - AIR verification shows `/home` and `/public` on gpu01 are local XFS filesystems suitable for staging the compressed input before submission. The personal `/data/houey` path is absent, so checkpoint backups need an approved existing project path under `/data`.
+- The first SSH server has a 145 GB root filesystem with about 33 GB free and about 51 GB used under `/home/ubuntu`. It can hold the roughly 23.5 GB compressed input temporarily, but leaves limited headroom for transfer staging and should not be the checkpoint archive.
+- gpu01 currently reports about 16 GB used in `/home/houey`. The server guide authorizes a 200 GB per-user working limit for `/home` and `/public`, so the compressed input and a bounded set of checkpoints fit there after a quota check. `$LOCAL_SCRATCH` remains job-temporary storage.
 
 ## Checkpoint artifact sizing
 
