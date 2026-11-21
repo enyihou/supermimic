@@ -7,16 +7,16 @@
       "state": "verified"
     },
     {
-      "detail": "The local archive hash and inventory passed for 142,220 G1 CSVs. The AIR checksum is pending.",
+      "detail": "The local and AIR archive SHA-256 checks match. The local inventory verified 142,220 G1 CSVs.",
       "id": "data",
       "label": "Dataset preflight",
-      "state": "in-progress"
+      "state": "verified"
     },
     {
-      "detail": "The smoke job requires a verified AIR dataset copy.",
+      "detail": "The 64-clip smoke job requires approved private storage accessible from its allocation.",
       "id": "smoke",
       "label": "Official smoke",
-      "state": "blocked"
+      "state": "waiting"
     },
     {
       "detail": "Measure iteration rate and checkpoint size at the planned training scale.",
@@ -45,7 +45,7 @@
   ],
   "schemaVersion": 1,
   "series": [],
-  "summary": "The local archive and source pins are verified. Training has not started.",
+  "summary": "The BONES-SEED G1 archive is checksum-verified on AIR. No training phase is verified yet.",
   "training": {
     "completedIterations": 0,
     "numEnvironments": 4096,
