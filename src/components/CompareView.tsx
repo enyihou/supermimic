@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import SimulationStage from './SimulationStage'
 import { motions } from '../motions'
+import { OFFICIAL_DEMO_LICENSE_URL, OFFICIAL_DEMO_URL } from '../officialReference'
 import { BUILT_IN_CHOICES, ORIGINAL_SIMULATION_ID, loadModelChoices, type ModelChoice } from '../trained/catalog'
 import { TrainedStage } from './TrainedView'
 import type { Motion } from '../types'
@@ -34,7 +35,15 @@ function OriginalPane({ side }: { side: string }) {
   }, [])
 
   return <div ref={viewport} className="comparison-viewport">
-    <iframe ref={iframe} className="comparison-original-viewport" title={`${side} original simulation`} src={`${base}?native=1`} />
+    <iframe ref={iframe} className="comparison-original-viewport" title={`${side} original local illustration`} src={`${base}?native=1`} />
+  </div>
+}
+
+function OfficialPane() {
+  return <div className="trained-empty comparison-official">
+    <p>The authors’ trained policy runs on their site, not inside this comparison.</p>
+    <a className="simulation-action" href={OFFICIAL_DEMO_URL} target="_blank" rel="noopener noreferrer">Open live SuperMimic demo ↗</a>
+    <p className="comparison-provenance"><a href={OFFICIAL_DEMO_LICENSE_URL} target="_blank" rel="noopener noreferrer">Official demo terms</a></p>
   </div>
 }
 
@@ -98,22 +107,23 @@ function ComparisonPane({ side, choice, choices, onChoice }: ComparisonPaneProps
         <p className="simulation-kicker">{side} view</p>
         <h2 id={`comparison-${side.toLowerCase()}-title`}>{choice.label}</h2>
       </div>
-      <label className="comparison-model-select">Model
-        <select aria-label={`${side} model`} value={choice.id} onChange={event => onChoice(event.target.value)}>
+      <label className="comparison-model-select">Source
+        <select aria-label={`${side} source`} value={choice.id} onChange={event => onChoice(event.target.value)}>
           {choices.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
       </label>
     </header>
-    {choice.kind === 'original' ? <OriginalPane side={side} /> :
+    {choice.kind === 'official' ? <OfficialPane /> : choice.kind === 'original' ? <OriginalPane side={side} /> :
       choice.kind === 'native' ? <NativePane side={side} /> : <TrainedStage key={choice.id} modelId={choice.id} />}
-    <p className="comparison-provenance">{choice.kind === 'original' ? 'The original simulation with its full controls, running independently in this pane.' :
-      choice.kind === 'native' ? 'Local illustration path from the existing browser simulation.' :
-      'This export binds its actor and world-model checkpoint hashes in the release manifest.'}</p>
+    {choice.kind !== 'official' ? <p className="comparison-provenance">{choice.kind === 'original' ? 'Original local controls with scripted motion. No trained policy is running.' :
+      choice.kind === 'native' ? 'Scripted motion with compact controls. No trained policy is running.' :
+      'This export binds its actor and world-model checkpoint hashes in the release manifest.'}</p> : null}
   </article>
 }
 
 export default function CompareView() {
-  const [choices, setChoices] = useState(BUILT_IN_CHOICES)
+  const [registryChoices, setRegistryChoices] = useState<ModelChoice[]>()
+  const choices = registryChoices ?? BUILT_IN_CHOICES
   const [leftId, setLeftId] = useState(ORIGINAL_SIMULATION_ID)
   const [rightId, setRightId] = useState('native')
   const [error, setError] = useState('')
@@ -121,7 +131,7 @@ export default function CompareView() {
   useEffect(() => {
     const request = new AbortController()
     void loadModelChoices(base).then(
-      next => { if (!request.signal.aborted) setChoices(next) },
+      next => { if (!request.signal.aborted) setRegistryChoices(next) },
       reason => { if (!request.signal.aborted) setError(reason instanceof Error ? reason.message : 'Model registry unavailable') },
     )
     return () => request.abort()
@@ -135,10 +145,10 @@ export default function CompareView() {
     <header className="comparison-intro">
       <p className="simulation-kicker">Model comparison</p>
       <h1 id="comparison-title">Two simulations, one workspace</h1>
-      <p>Choose the original simulation, the local illustration, or a released model independently on each side. Each trained export carries both checkpoint identities in its manifest.</p>
+      <p>Choose a local illustration or a published checkpoint independently on each side. The authors’ live demo opens separately.</p>
     </header>
-    {error ? <p className="comparison-registry-note" role="status">{error}. The local simulation remains available.</p> : null}
-    {!error && choices.length === BUILT_IN_CHOICES.length ? <p className="comparison-registry-note" role="status">No trained browser exports are published yet. Both built-in simulations are available on either side.</p> : null}
+    {error ? <p className="comparison-registry-note" role="status">{error}. The local illustrations remain available.</p> : null}
+    {registryChoices?.length === BUILT_IN_CHOICES.length ? <p className="comparison-registry-note" role="status">No trained browser exports from this project are published yet. <a href={OFFICIAL_DEMO_URL} target="_blank" rel="noopener noreferrer">Open the authors’ live demo ↗</a></p> : null}
     <div className="comparison-grid">
       <ComparisonPane side="Left" choice={left} choices={choices} onChoice={setLeftId} />
       <ComparisonPane side="Right" choice={right} choices={choices} onChoice={setRightId} />

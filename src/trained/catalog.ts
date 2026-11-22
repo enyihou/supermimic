@@ -4,14 +4,15 @@ const qaModelPattern = /(?:^|-)(?:synthetic|fixture|mock|test|smoke|benchmark|un
 export type ModelChoice = {
   id: string
   label: string
-  kind: 'original' | 'native' | 'trained'
+  kind: 'original' | 'native' | 'official' | 'trained'
 }
 
-// This ID cannot collide with a server-provided model release ID.
+// IDs containing colons cannot collide with server-provided model release IDs.
 export const ORIGINAL_SIMULATION_ID = 'original:simulation'
 export const BUILT_IN_CHOICES: ModelChoice[] = [
-  { id: ORIGINAL_SIMULATION_ID, label: 'Original simulation', kind: 'original' },
-  { id: 'native', label: 'Local illustration', kind: 'native' },
+  { id: ORIGINAL_SIMULATION_ID, label: 'Original local illustration', kind: 'original' },
+  { id: 'native', label: 'Compact local illustration', kind: 'native' },
+  { id: 'official:demo', label: 'Official demo (external)', kind: 'official' },
 ]
 
 function validModelId(value: unknown): value is string {

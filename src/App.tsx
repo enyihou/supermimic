@@ -2,13 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import ControlChrome from './components/ControlChrome'
 import ReproductionProgress from './components/ReproductionProgress'
 import { motions } from './motions'
+import { OFFICIAL_DEMO_URL } from './officialReference'
 import type { MotionCategory, SimulationSettings } from './types'
 
 const TrainedView = lazy(() => import('./components/TrainedView'))
 const CompareView = lazy(() => import('./components/CompareView'))
 const SimulationStage = lazy(() => import('./components/SimulationStage'))
 const base = import.meta.env.BASE_URL
-const reference = 'https://supermimic.github.io/demo/'
 const siteLinks = [
   { id: 'progress', label: 'Progress', href: base },
   { id: 'official', label: 'Official reference', href: `${base}?view=official` },
@@ -75,7 +75,7 @@ export default function App() {
           <p className="simulation-kicker">Authors’ demo</p>
           <h1 id="official-title">Official reference</h1>
           <p>The authors host the original live simulation. It opens at its official location and is separate from this reproduction.</p>
-          <a className="simulation-action" href={reference} target="_blank" rel="noopener noreferrer">Open official simulation ↗</a>
+          <a className="simulation-action" href={OFFICIAL_DEMO_URL} target="_blank" rel="noopener noreferrer">Open official simulation ↗</a>
         </section> :
         view === 'trained' ? <Suspense fallback={<p role="status">Loading trained-model view…</p>}><TrainedView /></Suspense> :
         <Suspense fallback={<p role="status">Loading comparison view…</p>}><CompareView /></Suspense>}
