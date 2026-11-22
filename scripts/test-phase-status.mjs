@@ -19,7 +19,7 @@ test('source and detached build evidence must reproduce the exact public status'
     await mkdir(reproduction)
     await mkdir(models)
     const reports = (await readdir(join(root, 'public', 'reproduction')))
-      .filter((name) => /^(preflight|status|smoke-audit|benchmark-audit|full-audit)\.json$/.test(name))
+      .filter((name) => /^(preflight|status|smoke-audit|cohort-audit|benchmark-audit|full-audit)\.json$/.test(name))
     for (const input of [...reports.map((name) => `reproduction/${name}`), 'models/releases.json']) {
       await copyFile(join(root, 'public', input), join(fixture, input))
     }

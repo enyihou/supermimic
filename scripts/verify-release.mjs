@@ -51,6 +51,9 @@ const expectedAttribution = '# SuperMimic browser policy\n\n' +
   'licensed under Apache-2.0; see mjlab-LICENSE.txt. The model contains [Unitree G1 robot geometry]' +
   '(https://github.com/unitreerobotics/unitree_mujoco/tree/1eb6642e3f3fdfb7fb13a9794fd6a2dd93ea0e7d/unitree_robots/g1), ' +
   'BSD-3-Clause; see Unitree-LICENSE.txt.\n'
+const cohortNotice = (approximate) => approximate ?
+  "\nTraining cohort: approximate Appendix E selection, not the authors' exact clip list.\n" :
+  "\nTraining cohort: authors' Appendix E clip list.\n"
 const hex = (n, value) => typeof value === 'string' && value.length === n && /^[a-f0-9]+$/.test(value) && /[1-9a-f]/.test(value)
 const sha256 = (x) => hex(64, x)
 const positive = (value) => Number.isSafeInteger(value) && value > 0
@@ -171,6 +174,13 @@ function checkAudit(audit, manifest) {
       (cohort.selection_id === 'supermimic-v3-appendix-e-approx-v1' && cohort.approximate === true)
     ) && keys(audit.motions, ['clips', 'frames', 'fps']) && ['clips', 'frames', 'fps'].every((key) => audit.motions[key] === cohort[key]),
   'Training motion selection, clip counts or sample rates do not match the audited exact or approximate cohort')
+  if (manifest) {
+    const fields = ['selection_id', 'approximate', 'allowlist_sha256', 'clips']
+    check(keys(manifest.training_cohort, [...fields, 'motion_archive_sha256']) &&
+      fields.every((key) => manifest.training_cohort[key] === cohort[key]) &&
+      manifest.training_cohort.motion_archive_sha256 === audit.motion_archive_sha256,
+    'Model package must label and match the verified training cohort')
+  }
   if (curves) checkLearningCurves(audit.learning_curves, audit.checkpoint_step)
   if (!attached) return
 
@@ -298,28 +308,13 @@ async function verifyScene(path, robot) {
   }
 }
 
-export async function verifyRelease(publicRoot = join(root, 'public')) {
-  const modelRoot = join(publicRoot, 'models')
-  await directory(publicRoot, 'Public tree')
-  await directory(modelRoot, 'Public model tree')
-  const registry = await json(join(modelRoot, 'releases.json'), 'Model registry')
-  check(keys(registry, ['schema_version', 'active']) && registry.schema_version === 1, 'Invalid model registry')
-  if (registry.active === null) {
-    await directory(modelRoot, 'Empty model registry', ['releases.json'])
-    await verifyPublicAudit(publicRoot, null)
-    return null
-  }
-  const id = registry.active
-  check(typeof id === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(id) &&
-    !/(?:^|-)(synthetic|fixture|mock|test|smoke|benchmark|untrained|random)(?:-|$)/.test(id),
-  'Registry must identify a trained release, not a benchmark or QA fixture')
+async function verifyModelRelease(publicRoot, modelRoot, id) {
   const release = join(modelRoot, id)
-  await directory(modelRoot, 'Public model tree', ['releases.json', id])
   await directory(release, 'Versioned model release', ['manifest.json', ...names])
   const manifest = parseTrainedManifest(await json(join(release, 'manifest.json'), 'Model manifest'))
   check(keys(manifest, [
     'format', 'model_id', 'task', 'dataset_sha256', 'checkpoint_step', 'source_commits', 'checkpoint_actor_sha256',
-    'checkpoint_world_model_sha256', 'metrics', 'artifacts', 'policy', 'robot',
+    'checkpoint_world_model_sha256', 'training_cohort', 'metrics', 'artifacts', 'policy', 'robot',
   ]) && manifest.model_id === id && manifest.checkpoint_step === target && manifest.dataset_sha256 === dataset.sha256 &&
     pinned(manifest.source_commits, ['reproduction']) && hex(40, manifest.source_commits.reproduction) &&
     sha256(manifest.checkpoint_actor_sha256) && sha256(manifest.checkpoint_world_model_sha256),
@@ -341,10 +336,37 @@ export async function verifyRelease(publicRoot = join(root, 'public')) {
       await hash(path) === artifact.sha256, `${name}: missing or mismatched artifact size/hash`)
     if (Object.hasOwn(allowedPublication, name)) check(allowedPublication[name] === artifact.sha256, `${name}: license text differs from the pinned source`)
   }
-  check(await readFile(join(release, 'ATTRIBUTION.md'), 'utf8') === expectedAttribution, 'Model attribution differs from the expected release notice')
+  check(await readFile(join(release, 'ATTRIBUTION.md'), 'utf8') === expectedAttribution + cohortNotice(manifest.training_cohort.approximate),
+    'Model attribution differs from the expected release notice or training cohort label')
   await verifyActor(join(release, 'actor.onnx'), manifest)
   await verifyScene(join(release, 'scene.mjbpack'), manifest.robot)
   return id
+}
+
+export async function verifyRelease(publicRoot = join(root, 'public')) {
+  const modelRoot = join(publicRoot, 'models')
+  await directory(publicRoot, 'Public tree')
+  await directory(modelRoot, 'Public model tree')
+  const registry = await json(join(modelRoot, 'releases.json'), 'Model registry')
+  const hasModels = object(registry) && Object.hasOwn(registry, 'models')
+  check(keys(registry, hasModels ? ['schema_version', 'active', 'models'] : ['schema_version', 'active']) &&
+    registry.schema_version === 1, 'Invalid model registry')
+
+  const ids = hasModels ? registry.models : registry.active === null ? [] : [registry.active]
+  check(Array.isArray(ids) && ids.length === new Set(ids).size && ids.every((id) =>
+    typeof id === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(id) &&
+    !/(?:^|-)(synthetic|fixture|mock|test|smoke|benchmark|untrained|random)(?:-|$)/.test(id)),
+  'Registry must identify trained releases, not benchmark or QA fixtures')
+  check(registry.active === null || ids.includes(registry.active), 'Active model must be listed in the registry')
+  if (ids.length === 0) {
+    await directory(modelRoot, 'Empty model registry', ['releases.json'])
+    await verifyPublicAudit(publicRoot, null)
+    return null
+  }
+
+  await directory(modelRoot, 'Public model tree', ['releases.json', ...ids])
+  for (const id of ids) await verifyModelRelease(publicRoot, modelRoot, id)
+  return registry.active ?? ids[0]
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

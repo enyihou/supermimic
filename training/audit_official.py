@@ -397,6 +397,21 @@ def verify_run(args: argparse.Namespace) -> dict:
     return audit
 
 
+def verify_full_benchmark_binding(full: dict, benchmark: dict) -> None:
+    """Gate the finished full audit on the independently audited benchmark inputs."""
+    from publish_phase_summary import series_benchmark, verify_phase
+
+    previous = verify_phase(benchmark, "benchmark")
+    series_benchmark(benchmark, previous)
+    current = verify_phase(full, "full")
+    require(previous["finished_job"] not in (current["finished_job"], full["checkpoint_job_id"]),
+            "Full training must be a separate allocation from the benchmark")
+    keys = ("source_commits", "dataset_sha256", "motion_archive_sha256", "motion_manifest",
+            "code_sha256", "environment_sha256", "reproduction_commit")
+    require(all(full[key] == benchmark[key] for key in keys),
+            "Full training does not match the verified benchmark's inputs and provenance")
+
+
 def attach_evaluation(args: argparse.Namespace) -> dict:
     from evaluate_heldout import MANIFEST, REPOSITORY, REVISION, SEED, SUITE_ID, suite_manifest
 
@@ -474,6 +489,8 @@ def main() -> None:
     verify.add_argument("--reproduction-commit", required=True)
     verify.add_argument("--num-envs", type=int, required=True)
     verify.add_argument("--iterations", type=int, required=True)
+    verify.add_argument("--benchmark-audit", type=Path,
+                        help="for full training, also verify that inputs match the successful benchmark")
     verify.add_argument("--output", type=Path, required=True)
     evaluation = commands.add_parser("attach-evaluation", help="bind completed held-out evaluation to full audit")
     evaluation.add_argument("--training-audit", type=Path, required=True)
@@ -488,7 +505,14 @@ def main() -> None:
             result = (capture_slurm(args.job_id) if args.controller_record is None else
                       normalize_slurm_record(args.job_id, args.controller_record.read_text(encoding="utf-8")))
         elif args.command == "verify":
+            if args.benchmark_audit is not None:
+                require(args.phase == "full" and args.output.resolve() != args.benchmark_audit.resolve(),
+                        "Benchmark evidence can only gate full training and must not be replaced")
             result = verify_run(args)
+            if args.benchmark_audit is not None:
+                from publish_phase_summary import read_json
+
+                verify_full_benchmark_binding(result, read_json(args.benchmark_audit))
         else:
             result = attach_evaluation(args)
         atomic_json(args.output, result)

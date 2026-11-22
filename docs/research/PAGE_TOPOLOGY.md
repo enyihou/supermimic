@@ -5,6 +5,11 @@ links to the authors' reference simulation at its official host.
 `?view=trained` reads `models/releases.json`, then loads the active audited
 export with browser-only ONNX and MuJoCo workers. An empty registry explicitly
 shows that no model has been released.
+`?view=compare` loads the same verified registry into two independent panes.
+Each pane can select a different release ID, so actor and world-model checkpoint
+hashes remain bound to the selected release manifest while experiments are
+compared side by side. The optional `models` registry field lists additional
+verified releases, with `active` identifying the default release.
 
 The independent, procedural illustration at `?native=1` is optional and does
 not run policy inference, MuJoCo, or any copied demo assets:

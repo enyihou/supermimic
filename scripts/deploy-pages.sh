@@ -40,7 +40,7 @@ if [[ -n "$(find "$build" -type l -print -quit)" ]]; then
   echo 'Public builds must not contain symbolic links.' >&2; exit 4
 fi
 shopt -s dotglob globstar nullglob
-asset_pattern='^(index\.html|assets/[A-Za-z0-9_.-]+\.(wasm|js|css)|licenses/[A-Za-z0-9_.-]+\.(md|txt)|reproduction/(preflight|status|smoke-audit|benchmark-audit|full-audit)\.json|models/releases\.json|models/[a-z0-9-]+/(manifest\.json|actor\.onnx|scene\.mjbpack|ATTRIBUTION\.md|mjlab-LICENSE\.txt|Unitree-LICENSE\.txt))$'
+asset_pattern='^(index\.html|assets/[A-Za-z0-9_.-]+\.(wasm|js|css)|licenses/[A-Za-z0-9_.-]+\.(md|txt)|reproduction/(preflight|status|smoke-audit|cohort-audit|benchmark-audit|full-audit)\.json|models/releases\.json|models/[a-z0-9-]+/(manifest\.json|actor\.onnx|scene\.mjbpack|ATTRIBUTION\.md|mjlab-LICENSE\.txt|Unitree-LICENSE\.txt))$'
 for item in "$build"/**/*; do
   [[ -f "$item" ]] || continue
   path=${item#"$build/"}

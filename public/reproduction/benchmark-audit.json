@@ -1,0 +1,122 @@
+{
+  "allocations": [
+    {
+      "allocated_gpus": 1,
+      "exit_code": "0:0",
+      "job_id": "33809",
+      "state": "COMPLETED"
+    }
+  ],
+  "benchmark": {
+    "checkpoint_samples": [
+      {
+        "checkpoint_archive_bytes": 549216887,
+        "checkpoint_seconds": 33.14992999471724,
+        "compute_seconds": 401.31553005054593,
+        "iterations": 200,
+        "step": 200
+      },
+      {
+        "checkpoint_archive_bytes": 943353078,
+        "checkpoint_seconds": 48.33260179683566,
+        "compute_seconds": 35.48824493587017,
+        "iterations": 200,
+        "step": 400
+      },
+      {
+        "checkpoint_archive_bytes": 1337380008,
+        "checkpoint_seconds": 65.16790416277945,
+        "compute_seconds": 35.51145942136645,
+        "iterations": 200,
+        "step": 600
+      },
+      {
+        "checkpoint_archive_bytes": 1731738965,
+        "checkpoint_seconds": 81.5407263673842,
+        "compute_seconds": 35.741332564502954,
+        "iterations": 200,
+        "step": 800
+      },
+      {
+        "checkpoint_archive_bytes": 2125425023,
+        "checkpoint_seconds": 98.36165402643383,
+        "compute_seconds": 35.562352173030376,
+        "iterations": 200,
+        "step": 1000
+      },
+      {
+        "checkpoint_archive_bytes": 2127014456,
+        "checkpoint_seconds": 99.22574820742011,
+        "compute_seconds": 35.73997934348881,
+        "iterations": 200,
+        "step": 1200
+      }
+    ],
+    "end_to_end_iterations_per_second": 1.1913959905564628,
+    "estimated_320000_iteration_seconds_at_1000_step_saves": 82102.11051213741,
+    "loop_elapsed_seconds": 1007.2217881474644,
+    "mean_steady_checkpoint_seconds": 78.52572691217065,
+    "steady_environment_steps_per_second": 23005.630796186582,
+    "steady_iterations_per_second": 5.61660908110024
+  },
+  "checkpoint_archive_bytes": 2127014456,
+  "checkpoint_archive_sha256": "63f397f4dd3a9ef2465888657575f3dc8de2fd3c14248da2bafeba45a57840d5",
+  "checkpoint_artifact_sha256": {
+    "actor.pt": "2f07eff568bb1b843564a8e53b8af66fbaa158d662fc8ed8d5bf36362827dd54",
+    "critic.pt": "e17eb2fa250c298104d5ad9c97b00eb929c76e852aa06f4bfea84b4e8748a632",
+    "run-config.json": "9d5061d39309a76544d517715dba51353c30dfe70a8c2def2e9f1a1dd8e82b8b",
+    "training_state.pt": "9dd9e381ed09d15882e3049e94ce2f15b34635c5ac7b14b01da13862f5688f1c",
+    "world_model.pt": "87a93a1acb09cb069c1266bfc63a896c36819314a0ed8e66d05259e654d001cc"
+  },
+  "checkpoint_job_id": "33809",
+  "checkpoint_step": 1200,
+  "code_sha256": "5698e6d903d27b3cd895c081cfe8a0a3069bd01d5a95c1e7c7e60c0118627f19",
+  "dataset_sha256": "52580ea8bced72ea9e2ff1e7b68f01c51c7f1099581e9a46b7c87e1dec106d8a",
+  "environment_sha256": "9e8e488d41a6aaed3af99c70372f42164e65505ea2cebd8d01e5090e81cf2172",
+  "held_out_evaluation_verified": false,
+  "motion_archive_sha256": "4789a257cdcc0016d0a4b6dbbf41a209cf962321e81e2da0a96d6a1b12b7cbd2",
+  "motion_manifest": {
+    "allowlist_sha256": "8c6ee15ac5e5ead2492f936424895954842feb1f1ca3dd045dc6ea1322a5e217",
+    "approximate": true,
+    "clips": 129919,
+    "clipset_sha256": "fa6c161ca8a4d5164565758c574affef53d31554ba0706013d1ddb7fd12bf4bf",
+    "fps": 50,
+    "frames": 47467032,
+    "input_fps": 120,
+    "selection": "explicit-allowlist",
+    "selection_id": "supermimic-v3-appendix-e-approx-v1",
+    "sha256": "d41f3f15f8f19cd5532fd79d621a5f88a5ce6c23901c427607031029553dc586"
+  },
+  "motions": {
+    "clips": 129919,
+    "fps": 50.0,
+    "frames": 47467032
+  },
+  "num_envs": 4096,
+  "outputs_archive_sha256": "e756d932eebd5680b73a9662b7e73e76ca11ea367c316d14068830ec17ea71e8",
+  "phase": "benchmark",
+  "reproduction_commit": "f17e90729f959bcd9f5e4c4cd428cab5dd307143",
+  "retained_checkpoints": [
+    {
+      "archive_bytes": 2127014456,
+      "archive_sha256": "63f397f4dd3a9ef2465888657575f3dc8de2fd3c14248da2bafeba45a57840d5",
+      "step": 1200
+    }
+  ],
+  "schema_version": 1,
+  "source_commits": {
+    "mjlab_research": "379c55e88b1dec73f93943e524a879b2ebbf45c5",
+    "supermimic": "5fb92297ab4fe3d86629d9f0c635334791bb0d5f"
+  },
+  "verified_checks": [
+    "slurm_terminal_state",
+    "job_status",
+    "success_marker",
+    "source_pins",
+    "dataset_checksum",
+    "packed_motion_checksum",
+    "target_step",
+    "checkpoint_archive_integrity",
+    "milestone_retention"
+  ]
+}

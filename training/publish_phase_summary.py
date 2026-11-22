@@ -30,6 +30,8 @@ CHECKS = frozenset({
     "slurm_terminal_state", "job_status", "success_marker", "source_pins", "dataset_checksum",
     "packed_motion_checksum", "target_step", "checkpoint_archive_integrity", "milestone_retention",
 })
+COHORT_CHECKS = frozenset({"slurm_terminal_state", "job_status", "success_marker", "source_pins",
+                           "dataset_checksum", "packed_motion_checksum", "approximate_provenance", "canonical_backup"})
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX40 = re.compile(r"[0-9a-f]{40}")
 JOB = re.compile(r"[1-9][0-9]*")
@@ -136,6 +138,39 @@ def terminal(row, label: str, extra=()) -> str:
     obj = exact_shape(row, JOB_FIELDS.union(extra), label)
     exact_fields(obj, {"state": "COMPLETED", "exit_code": "0:0", "allocated_gpus": 1}, label)
     return fingerprint(obj.get("job_id"), f"{label} job ID", JOB)
+
+
+def verify_prepared_cohort(cohort: dict, smoke: dict) -> tuple[str, dict]:
+    identity = {key: smoke[key] for key in ("reproduction_commit", "dataset_sha256", "code_sha256", "environment_sha256")}
+    exact_shape(cohort, {"schema_version", "phase", "source_commits", "sonic_source_sha256", "allocation", "counts",
+                         "motion_archive_sha256", "motion_archive_bytes", "motion_manifest", "verified_checks", *identity},
+                "cohort audit")
+    exact_fields(cohort, {"schema_version": 1, "phase": "cohort", **identity}, "cohort and smoke input identity")
+    exact_fields(exact_shape(cohort.get("source_commits"), SOURCE_COMMITS, "cohort source pins"), SOURCE_COMMITS, "cohort pins")
+    require(cohort.get("sonic_source_sha256") == "b6b50d441a4876a382eb3ff33ba940c487d1647230b5ecacaa37cfcf521258da",
+            "Cohort selector source does not match the documented approximation")
+    job = exact_shape(cohort.get("allocation"), JOB_FIELDS, "cohort allocation")
+    exact_fields(job, {"state": "COMPLETED", "exit_code": "0:0", "allocated_gpus": 0}, "cohort Slurm evidence")
+    fingerprint(job.get("job_id"), "cohort job ID", JOB)
+    fingerprint(cohort.get("motion_archive_sha256"), "cohort archive hash")
+    integer(cohort.get("motion_archive_bytes"), "cohort archive bytes", low=1, high=60_000_000_000)
+    counts = exact_shape(cohort.get("counts"), {"raw", "after_names", "selected"}, "cohort counts")
+    exact_fields(counts, {"raw": RAW_CLIPS}, "cohort starting corpus")
+    named = integer(counts.get("after_names"), "after name filter", low=65, high=RAW_CLIPS)
+    selected = integer(counts.get("selected"), "selected clips", low=65, high=named)
+    expected = {"clips": selected, "input_fps": 120, "fps": 50, "selection": "explicit-allowlist",
+                "selection_id": "supermimic-v3-appendix-e-approx-v1", "approximate": True}
+    motion = exact_shape(cohort.get("motion_manifest"), {*expected, "sha256", "clipset_sha256", "allowlist_sha256", "frames"},
+                         "cohort motion provenance")
+    exact_fields(motion, expected, "approximate cohort motion provenance")
+    integer(motion.get("frames"), "cohort frames", low=2 * selected)
+    for field in ("sha256", "clipset_sha256", "allowlist_sha256"):
+        fingerprint(motion.get(field), f"cohort {field}")
+    checks = cohort.get("verified_checks")
+    require(isinstance(checks, list) and len(checks) == len(COHORT_CHECKS)
+            and all(isinstance(key, str) for key in checks) and set(checks) == COHORT_CHECKS,
+            "Cohort audit is missing expected checks")
+    return job["job_id"], counts
 
 
 def verify_phase(audit: dict, phase: str) -> dict:
@@ -256,7 +291,7 @@ def series_benchmark(audit: dict, stage: dict) -> tuple[list[dict], float]:
     return [
         make_series("benchmark-iteration-rate", "Benchmark interval throughput", "iterations/s", zip(BENCHMARK_STEPS, rates)),
         make_series("benchmark-archive-size", "Benchmark checkpoint size", "MiB", zip(BENCHMARK_STEPS, (v / MIB for v in sizes))),
-        make_series("benchmark-checkpoint-time", "Benchmark checkpoint write and backup time", "s", zip(BENCHMARK_STEPS, publishes)),
+        make_series("benchmark-checkpoint-time", "Benchmark checkpoint write and transfer time", "s", zip(BENCHMARK_STEPS, publishes)),
     ], steady_speed
 
 
@@ -319,22 +354,31 @@ def cohort_description(stage: dict) -> str:
 def active_release(registry) -> str | None:
     if registry is None:
         return None
-    obj = exact_shape(registry, {"schema_version", "active"}, "public release registry")
+    fields = {"schema_version", "active", "models"} if "models" in registry else {"schema_version", "active"}
+    obj = exact_shape(registry, fields, "public release registry")
     require(type(obj["schema_version"]) is int and obj["schema_version"] == 1, "Invalid public release registry")
     model_id = obj["active"]
     require(model_id is None or (isinstance(model_id, str) and RELEASE_ID.fullmatch(model_id)
                                  and not QA_ID.search(model_id)), "Invalid active release ID")
+    if "models" in obj:
+        models = obj["models"]
+        require(isinstance(models, list) and all(isinstance(item, str) for item in models),
+                "Invalid model release list")
+        require(len(models) == len(set(models)), "Invalid model release list")
+        require(all(RELEASE_ID.fullmatch(item) and not QA_ID.search(item) for item in models),
+                "Invalid model release ID")
+        require(model_id is None or model_id in models, "Active release must be listed in the model release list")
     return model_id
 
 
-def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, full=None, registry=None) -> dict:
+def generate(preflight: dict, updated_at: str, *, smoke=None, cohort=None, benchmark=None, full=None, registry=None) -> dict:
     """Regenerate the complete status; no private fields or old graph data pass through."""
     air_verified = verify_preflight(preflight, iso_day(updated_at))
     model_id = active_release(registry)
     require(model_id is None or full is not None, "Active release requires an audited full run and held-out evaluation")
-    require(air_verified or all(row is None for row in (smoke, benchmark, full)),
+    require(air_verified or all(row is None for row in (smoke, cohort, benchmark, full)),
             "Training audits require the independent AIR dataset checksum")
-    require((smoke is not None or benchmark is None) and (benchmark is not None or full is None),
+    require((smoke is not None or (cohort is None and benchmark is None)) and (benchmark is not None or full is None),
             "Phase audits must be supplied in sequence: smoke, benchmark, full")
     series: list[dict] = []
     summary = ("The local archive and source pins are verified. Training has not started.")
@@ -344,6 +388,7 @@ def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, fu
                  "The local archive hash and inventory passed for 142,220 G1 CSVs. The AIR checksum is pending."),
         "smoke": ("Official smoke", "waiting",
                   "The 64-clip smoke job requires approved private storage accessible from its allocation."),
+        "cohort": ("Approximate Appendix E cohort", "waiting", "Pack and audit the approved training cohort."),
         "benchmark": ("Throughput and checkpoint size", "waiting",
                       "Measure iteration rate and checkpoint size at the planned training scale."),
         "train": ("Single-GPU training", "waiting", "Full training follows a verified smoke test and benchmark."),
@@ -367,8 +412,22 @@ def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, fu
         series.append(make_series("smoke-archive-size", "Smoke checkpoint size", "MiB",
                                   [(audit["step"], audit["archive_bytes"] / MIB)]))
         summary = "The official smoke test and its checkpoint passed audit. Full training has not been verified."
+    if cohort is not None:
+        job, counts = verify_prepared_cohort(cohort, smoke)
+        require(job not in jobs, "Cohort and smoke must be separate allocations")
+        jobs.add(job)
+        label["cohort"] = (label["cohort"][0], "verified",
+                           f"{counts['raw']:,} raw motions → {counts['after_names']:,} after name filtering → "
+                           f"{counts['selected']:,} selected and packed at 50 Hz. This is not the authors’ exact cohort.")
+        summary = "The official smoke and the approximate Appendix E training cohort passed audit. No full run has been verified."
+    else:
+        del label["cohort"]
     if benchmark is not None:
         audit = verify_phase(benchmark, "benchmark")
+        if cohort is not None:
+            require(all(benchmark[key] == cohort[key] for key in ("motion_archive_sha256", "motion_manifest",
+                        "code_sha256", "environment_sha256", "reproduction_commit")),
+                    "Benchmark does not use the audited approximate cohort and package")
         benchmark_stage = audit
         current_jobs = {audit["finished_job"], benchmark["checkpoint_job_id"]}
         require(jobs.isdisjoint(current_jobs), "Benchmark and smoke must be separate allocations")
@@ -384,9 +443,9 @@ def generate(preflight: dict, updated_at: str, *, smoke=None, benchmark=None, fu
         current_jobs = {audit["finished_job"], full["checkpoint_job_id"]}
         require(jobs.isdisjoint(current_jobs), "Full training must use separate allocations")
         jobs.update(current_jobs)
-        require(full["motion_archive_sha256"] == benchmark["motion_archive_sha256"]
-                and full["environment_sha256"] == benchmark["environment_sha256"],
-                "Full training does not match the benchmark's packed dataset and environment")
+        require(all(full[key] == benchmark[key] for key in ("motion_archive_sha256", "environment_sha256",
+                    "code_sha256", "reproduction_commit")),
+                "Full training does not match the benchmark's packed dataset and environment or source package")
         require(audit["cohort"] == benchmark_stage["cohort"],
                 "Full training motion provenance differs from the benchmark")
         step = audit["step"]
@@ -448,17 +507,18 @@ def main() -> None:
     parser.add_argument("--preflight", required=True, type=Path, help="Independent local/AIR dataset preflight JSON")
     parser.add_argument("--date", required=True, help="Explicit status date YYYY-MM-DD")
     parser.add_argument("--smoke", type=Path, help="Verified smoke audit JSON")
+    parser.add_argument("--cohort", type=Path, help="Verified approximate motion preparation audit JSON")
     parser.add_argument("--benchmark", type=Path, help="Verified benchmark audit JSON")
     parser.add_argument("--full", type=Path, help="Verified full audit JSON, optionally with attached held-out evidence")
     parser.add_argument("--registry", type=Path, help="Public model registry (verify artifacts separately with verify-release)")
     parser.add_argument("--output", required=True, type=Path, help="Status JSON to write and review separately from deployment")
     args = parser.parse_args()
     try:
-        paths = [path for path in (args.preflight, args.smoke, args.benchmark, args.full, args.registry) if path is not None]
+        paths = [path for path in (args.preflight, args.smoke, args.cohort, args.benchmark, args.full, args.registry) if path is not None]
         require(all(path.resolve() != args.output.resolve() for path in paths),
                 "Output must not replace an audit or preflight input")
         inputs = {phase: read_json(path) if (path := getattr(args, phase)) is not None else None
-                  for phase in RECIPE}
+                  for phase in (*RECIPE, "cohort")}
         registry = read_json(args.registry) if args.registry is not None else None
         report = generate(read_json(args.preflight), args.date, **inputs, registry=registry)
         atomic_json(args.output, report)

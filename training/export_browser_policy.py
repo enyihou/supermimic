@@ -25,6 +25,8 @@ import torch
 from onnx.reference import ReferenceEvaluator
 from torch import nn
 
+from publish_phase_summary import read_json, series_evaluation, verify_phase
+
 
 PINS = {
     "supermimic": "5fb92297ab4fe3d86629d9f0c635334791bb0d5f",
@@ -225,6 +227,23 @@ def read_public_metrics(path: Path) -> dict[str, float]:
     return metrics
 
 
+def audited_training_cohort(args: argparse.Namespace, metrics: dict) -> dict:
+    audit = read_json(args.training_audit)
+    stage = verify_phase(audit, "full")
+    if not (args.checkpoint_step == stage["step"] and args.dataset_sha256 == audit["dataset_sha256"]
+            and args.reproduction_commit == audit["reproduction_commit"]
+            and args.expected_actor_sha256 == audit["checkpoint_artifact_sha256"]["actor.pt"]
+            and args.expected_world_model_sha256 == audit["checkpoint_artifact_sha256"]["world_model.pt"]
+            and audit["held_out_evaluation_verified"] is True):
+        raise ValueError("Export inputs do not match the audited full checkpoint and held-out phase")
+    series_evaluation(audit, {stage["finished_job"], audit["checkpoint_job_id"]})
+    if metrics != audit["held_out_evaluation"]["metrics"]:
+        raise ValueError("Export metrics differ from the audited held-out metrics")
+    provenance = stage["cohort"]
+    return {**{name: provenance[name] for name in ("selection_id", "approximate", "allowlist_sha256", "clips")},
+            "motion_archive_sha256": audit["motion_archive_sha256"]}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoint_dir", type=Path, help="Private directory containing actor.pt and world_model.pt")
@@ -236,6 +255,7 @@ def main() -> None:
     parser.add_argument("--dataset-sha256", type=lambda s: digest_arg(s, 64), required=True)
     parser.add_argument("--reproduction-commit", type=lambda s: digest_arg(s, 40), required=True)
     parser.add_argument("--metrics", type=Path, required=True, help="Audited public, flat aggregate numeric JSON")
+    parser.add_argument("--training-audit", type=Path, required=True, help="Full phase audit with attached held-out evaluation")
     args = parser.parse_args()
     if args.checkpoint_step < 1 or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.model_id):
         parser.error("Expected a positive checkpoint step and a lowercase hyphenated model ID")
@@ -251,6 +271,7 @@ def main() -> None:
     if sha256(actor_path) != args.expected_actor_sha256 or sha256(args.checkpoint_dir / "world_model.pt") != args.expected_world_model_sha256:
         raise ValueError("Private checkpoint does not match the audited hashes")
     metrics = read_public_metrics(args.metrics)
+    training_cohort = audited_training_cohort(args, metrics)
     torch.set_num_threads(1)
     actor = new_pinned_actor()
     actor.load_state_dict(torch.load(actor_path, map_location="cpu", weights_only=True), strict=True)
@@ -263,6 +284,8 @@ def main() -> None:
         robot = write_scene(args.checkpoint_dir, release / "scene.mjbpack")
         shutil.copyfile(mjlab_root / "LICENSE", release / "mjlab-LICENSE.txt")
         shutil.copyfile(Path(__file__).parent / "licenses" / "Unitree-BSD-3-Clause.txt", release / "Unitree-LICENSE.txt")
+        selection_notice = ("\nTraining cohort: approximate Appendix E selection, not the authors' exact clip list.\n"
+                            if training_cohort["approximate"] else "\nTraining cohort: authors' Appendix E clip list.\n")
         (release / "ATTRIBUTION.md").write_text(
             "# SuperMimic browser policy\n\n"
             "Training data includes Motion Data by [Bones Studio](https://bones.studio/). "
@@ -270,7 +293,7 @@ def main() -> None:
             "The scene is compiled from the pinned [mjlab source](https://github.com/HybridRobotics/mjlab_research), "
             "licensed under Apache-2.0; see mjlab-LICENSE.txt. The model contains [Unitree G1 robot geometry]"
             "(https://github.com/unitreerobotics/unitree_mujoco/tree/1eb6642e3f3fdfb7fb13a9794fd6a2dd93ea0e7d/"
-            "unitree_robots/g1), BSD-3-Clause; see Unitree-LICENSE.txt.\n"
+            "unitree_robots/g1), BSD-3-Clause; see Unitree-LICENSE.txt.\n" + selection_notice
         )
         artifacts = {
             path.name: {"sha256": sha256(path), "bytes": path.stat().st_size}
@@ -285,6 +308,7 @@ def main() -> None:
             "source_commits": {**PINS, "reproduction": args.reproduction_commit},
             "checkpoint_actor_sha256": args.expected_actor_sha256,
             "checkpoint_world_model_sha256": args.expected_world_model_sha256,
+            "training_cohort": training_cohort,
             "metrics": metrics,
             "artifacts": artifacts,
             "policy": {

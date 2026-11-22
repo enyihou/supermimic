@@ -71,6 +71,14 @@ arguments with `--accept-approximate "$PINNED_SONIC_SOURCE" "$PINNED_SONIC_SOURC
 Verify the Slurm terminal status, `SUCCESS`, `job-status.txt`, preparation
 metadata and archive checksum before passing the same packed input to the
 benchmark and full run. Neither the allowlist nor the packed motions are public.
+For the approved approximate path, the versioned gpu01 operations helpers
+can detach the input stage, Slurm submission and terminal watcher, then run
+`finish_air_cohort.sh` with the shared project, saved cohort ID, Slurm job ID
+and a fresh benchmark run ID. It audits the actual zero-GPU completion and
+packed provenance, verifies a private canonical backup, and only then submits
+the benchmark against that exact motion digest. Its submission intent and job
+ID must be reconciled before any resubmission. Only the allowlisted output of
+`audit_air_cohort.py` is suitable for `public/reproduction/cohort-audit.json`.
 
 Training data includes Motion Data by [Bones Studio](https://bones.studio/).
 Use of the underlying dataset is subject to the BONES Motion Capture Dataset
@@ -105,11 +113,43 @@ env -u BASH_ENV -u ENV lab-submit --kind gpu -- --parsable --chdir="$SHARED_PROJ
 
 The benchmark uses the full-scale motion package and 4,096 environments.
 Use measured steady-state throughput, publication cost, and checkpoint size
-to plan wall time and storage. The full job preserves a rolling latest
+to plan wall time and storage. `plan_air_full.py` validates the benchmark
+against its published preparation and smoke audits and estimates wall time,
+allocation count and private storage from the measured windows. Compare the
+estimated reserves with current `gpu01` quotas, confirm the GPU type and
+partition limit, and pass the planned `--time` at submission. The full job preserves a rolling latest
 checkpoint every 1,000 completed iterations and a milestone every 32,000,
-including the final state. If an allocation stops early, capture its terminal
-Slurm record, verify the latest checkpoint, and resubmit the same full recipe,
-package and run ID with `full resume`. Do not resume a live allocation.
+including the final state. For a planned walltime handoff, capture the terminal
+Slurm record and copy the stopped attempt, its latest checkpoint, and any new
+milestones to the independent private archive. From the login host, check:
+
+```sh
+python3 -B training/backup_air_attempt.py "$RUNS" "$FULL_RUN_ID" "$OLD_JOB_ID" --step "$RESUME_STEP"
+python3 -B training/verify_air_resume.py "$RUNS" "$FULL_RUN_ID" "$OLD_JOB_ID" \
+  --slurm-record "$OLD_SLURM_JSON" --benchmark "$BENCHMARK_AUDIT"
+```
+
+The verifier requires the intentional `FAILED/124:0` batch exit, matching
+stage-out and checkpoint evidence, a step that advanced in the old allocation,
+and matching canonical copies. Before submitting the same recipe, package and
+run ID with `full resume`, recheck Slurm for another pending or running attempt.
+If the gate fails (including an unplanned timeout or a stale latest pointer),
+reconcile the evidence manually; do not submit based on queue disappearance.
+
+For each full attempt, start the login-side worker immediately after
+submission with its job-specific private state directory (`job-id` and
+`inputs.txt`, as below):
+
+```sh
+bash training/finish_air_smoke.sh "$SHARED_PROJECT" "$FULL_RUN_ID" "$JOB_ID" \
+  "$PRIVATE_STATE" full "$BENCHMARK_AUDIT"
+```
+
+Run it detached with a private log. Success backs up all ten milestones and
+produces `full-audit.json` only after binding the completed run to the audited
+benchmark. A planned wall-time stop backs up the retained milestones and
+handoff checkpoint, then invokes the resume verifier. The worker does not
+submit a new allocation. Keep each attempt's state and terminal record.
 
 Monitor `squeue`, a concise training log tail, and published checkpoint
 manifests. Save the terminal Slurm record promptly; controller records age out.

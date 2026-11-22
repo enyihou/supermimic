@@ -9,7 +9,7 @@ const validModelId = /^[a-z0-9][a-z0-9-]{0,63}$/
 
 type Release = { state: 'loading' | 'empty' | 'error' } | { state: 'available', id: string }
 
-function TrainedStage({ modelId }: { modelId: string }) {
+export function TrainedStage({ modelId }: { modelId: string }) {
   const mount = useRef<HTMLDivElement>(null)
   const output = useRef<HTMLOutputElement>(null)
   const simulation = useRef<ReturnType<typeof startTrainedSimulation> | null>(null)
@@ -158,6 +158,9 @@ function TrainedStage({ modelId }: { modelId: string }) {
     {manifest ? <p className="trained-version">
       Model <code>{manifest.model_id}</code> · checkpoint {manifest.checkpoint_step.toLocaleString()} ·{' '}
       <a href={`${base}models/${modelId}/manifest.json`}>Release manifest</a>
+    </p> : null}
+    {manifest ? <p className="trained-version trained-provenance">
+      Actor <code>{manifest.checkpoint_actor_sha256.slice(0, 12)}…</code> · world model <code>{manifest.checkpoint_world_model_sha256.slice(0, 12)}…</code>
     </p> : null}
   </>
 }

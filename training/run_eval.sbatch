@@ -12,7 +12,7 @@
 
 # Run on gpu01 with lab-submit; set absolute private output/error paths.
 # Usage: run_eval.sbatch PACKAGE_DIR CHECKPOINT_DIR LAFAN1_TGZ LAFAN1_SHA256
-#                       BONES_SHA256 PRIVATE_EVALUATIONS_ROOT
+#                       BONES_SHA256 PRIVATE_EVALUATIONS_ROOT FINAL_CHECKPOINT_SHA256
 set -euo pipefail
 umask 077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -32,12 +32,13 @@ owner_only_directory() {
   # Project trees commonly inherit setgid. The rwx mode must still be 0700.
   (( (8#$mode & 0777) == 0700 ))
 }
-[[ $# == 6 ]] || fail 'Expected six arguments; see script usage.'
+[[ $# == 7 ]] || fail 'Expected seven arguments; see script usage.'
 [[ "${SLURM_JOB_ID:-}" =~ ^[1-9][0-9]*$ && "${SLURM_JOB_NUM_NODES:-${SLURM_NNODES:-}}" == 1 ]] ||
   fail 'Expected a single-node Slurm batch allocation.'
 [[ "${LOCAL_SCRATCH:-}" == "/scratch/jobs/$SLURM_JOB_ID" && -d "$LOCAL_SCRATCH" && ! -L "$LOCAL_SCRATCH" ]] ||
   fail 'Allocated scratch unavailable.'
-[[ "$4" =~ ^[0-9a-f]{64}$ && "$5" =~ ^[0-9a-f]{64}$ ]] || fail 'Expected two SHA-256 digests.'
+[[ "$4" =~ ^[0-9a-f]{64}$ && "$5" =~ ^[0-9a-f]{64}$ && "$7" =~ ^[0-9a-f]{64}$ ]] ||
+  fail 'Expected held-out, training data, and independently audited checkpoint SHA-256 digests.'
 package_dir=$(realpath -e -- "$1")
 checkpoint_dir=$(realpath -e -- "$2")
 suite=$(realpath -e -- "$3")
@@ -72,10 +73,11 @@ finish() {
     fail 'Evaluation stage-out checksum mismatch.'
   (cd -- "$partial"; sha256sum outputs.tar.gz job-status.txt > SHA256SUMS)
   if [[ $rc == 0 ]]; then printf 'Evaluation metrics published.\n' > "$partial/SUCCESS"; fi
-  sync -f "$partial"
+  sync -d -- "$partial/"*
+  sync -- "$partial"
   mv -nT -- "$partial" "$attempt"
   [[ ! -e "$partial" ]] || fail 'Evaluation publication destination already exists.'
-  sync -f "$results"
+  sync -- "$results"
   printf 'Published evaluation %s (exit_code=%s)\n' "$SLURM_JOB_ID" "$rc"
   exit "$rc"
 }
@@ -100,6 +102,8 @@ printf '%s\n' 'supermimic=5fb92297ab4fe3d86629d9f0c635334791bb0d5f' 'mjlab_resea
 for member in checkpoint.tar.gz checkpoint.json SHA256SUMS; do
   cp -- "$checkpoint_dir/$member" "$work/checkpoint/$member"
 done
+printf '%s  %s\n' "$7" "$work/checkpoint/checkpoint.tar.gz" | sha256sum -c --status ||
+  fail 'Staged checkpoint bytes do not match the independent full audit.'
 cp -- "$suite" "$work/archives/lafan1.tar.gz"
 printf '%s  %s\n' "$4" "$work/archives/lafan1.tar.gz" | sha256sum -c --status ||
   fail 'Held-out suite checksum mismatch on scratch.'

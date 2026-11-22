@@ -26,12 +26,16 @@ runbook. On gpu01, submit the evaluation with the **same** verified code and
 environment package as the final checkpoint. Include the evaluation scripts
 and suite manifest when building `code.tar.gz`. All environment, model, suite,
 and logs are staged on allocated scratch; no Hub or W&B is used by the job.
+Wait for the full training audit and independent private backup. Use the
+immutable step-320,000 checkpoint directory (not `latest`) and the
+`checkpoint_archive_sha256` from that audit. The batch script verifies the
+staged archive against the audit's digest before opening the holdout.
 
 ```sh
 env -u BASH_ENV -u ENV lab-submit --kind gpu -- --parsable --chdir="$SHARED_PROJECT" \
   --output="$PRIVATE_LOGS/%j.out" --error="$PRIVATE_LOGS/%j.err" \
   training/run_eval.sbatch "$PACKAGE_DIR" "$CHECKPOINT_DIR" "$LAFAN1_ARCHIVE" \
-  "$LAFAN1_SHA256" "$BONES_SHA256" "$PRIVATE_EVALUATIONS_ROOT"
+  "$LAFAN1_SHA256" "$BONES_SHA256" "$PRIVATE_EVALUATIONS_ROOT" "$CHECKPOINT_SHA256"
 ```
 
 The simulator uses the pinned MuJoCo Warp environment and checkpoint actor.
@@ -44,12 +48,13 @@ steps after failure as zero. Pose errors are measured before each simulated
 control step and averaged per clip, then across clips. Results are aggregated;
 no trajectory poses, clip logs, or weights are needed on GitHub.
 
-Save the authoritative Slurm result for every phase promptly; queue
-disappearance is not a terminal record. Re-capture after the job is known to
-have ended if it was still running at the first capture:
+Start the terminal watcher immediately after submission, detached on gpu01
+with a private log. Record the exact job ID. Queue disappearance is not a
+terminal record:
 
 ```sh
-python3 training/audit_official.py capture-slurm "$JOB_ID" --output "$PRIVATE_RECORD"
+nohup python3 -B -u training/watch_slurm.py "$JOB_ID" "$PRIVATE_RECORD" \
+  --interval 10 </dev/null >>"$PRIVATE_WATCHER_LOG" 2>&1 &
 ```
 
 Run the audit against the independently verified package and input hashes:

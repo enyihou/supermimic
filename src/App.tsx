@@ -5,6 +5,7 @@ import { motions } from './motions'
 import type { MotionCategory, SimulationSettings } from './types'
 
 const TrainedView = lazy(() => import('./components/TrainedView'))
+const CompareView = lazy(() => import('./components/CompareView'))
 const SimulationStage = lazy(() => import('./components/SimulationStage'))
 const base = import.meta.env.BASE_URL
 const reference = 'https://supermimic.github.io/demo/'
@@ -12,6 +13,7 @@ const siteLinks = [
   { id: 'progress', label: 'Progress', href: base },
   { id: 'official', label: 'Official reference', href: `${base}?view=official` },
   { id: 'trained', label: 'Trained model', href: `${base}?view=trained` },
+  { id: 'compare', label: 'Compare', href: `${base}?view=compare` },
 ] as const
 
 function NativeApp() {
@@ -59,7 +61,7 @@ export default function App() {
   const params = new URLSearchParams(window.location.search)
   if (params.get('native') === '1') return <NativeApp />
   const requested = params.get('view')
-  const view = requested === 'official' || requested === 'trained' ? requested : 'progress'
+  const view = requested === 'official' || requested === 'trained' || requested === 'compare' ? requested : 'progress'
   return <div className="reproduction-site">
     <header className="reproduction-header">
       <a className="reproduction-brand" href={base}>SuperMimic <span>REPRODUCTION</span></a>
@@ -75,7 +77,8 @@ export default function App() {
           <p>The authors host the original live simulation. It opens at its official location and is separate from this reproduction.</p>
           <a className="simulation-action" href={reference} target="_blank" rel="noopener noreferrer">Open official simulation ↗</a>
         </section> :
-        <Suspense fallback={<p role="status">Loading trained-model view…</p>}><TrainedView /></Suspense>}
+        view === 'trained' ? <Suspense fallback={<p role="status">Loading trained-model view…</p>}><TrainedView /></Suspense> :
+        <Suspense fallback={<p role="status">Loading comparison view…</p>}><CompareView /></Suspense>}
       <footer className="reproduction-footer">
         <a href="https://arxiv.org/abs/2610.28480">Paper</a>
         <a href="https://github.com/enyihou/supermimic/tree/source">Reproduction source</a>

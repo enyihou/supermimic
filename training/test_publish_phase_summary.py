@@ -10,8 +10,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from audit_official import verify_full_benchmark_binding
+from plan_air_full import MAX_SECONDS, plan
 from publish_phase_summary import (
-    ARCHIVE_BYTES, BENCHMARK_STEPS, CHECKS, DATASET_ID, DATASET_REVISION, DATASET_SHA256,
+    ARCHIVE_BYTES, BENCHMARK_STEPS, CHECKS, COHORT_CHECKS, DATASET_ID, DATASET_REVISION, DATASET_SHA256,
     EXPANDED_BYTES, MANIFEST, MAX_JSON_BYTES, MIB, MILESTONE_STEPS, RAW_CLIPS, RECIPE, REPOSITORY, REVISION,
     SOURCE_COMMITS, generate, read_json, sha256_file,
 )
@@ -103,11 +105,78 @@ def curves():
     }
 
 
+class FullBenchmarkBindingTest(unittest.TestCase):
+    def test_accepts_same_verified_inputs_and_distinct_allocations(self):
+        verify_full_benchmark_binding(phase("full"), phase("benchmark"))
+
+    def test_rejects_cohort_or_job_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            verify_full_benchmark_binding(phase("full", approximate=False), phase("benchmark"))
+        full = phase("full")
+        full["allocations"] = [alloc("102")]
+        full["checkpoint_job_id"] = "102"
+        with self.assertRaisesRegex(ValueError, "separate allocation"):
+            verify_full_benchmark_binding(full, phase("benchmark"))
+
+
+def prepared_cohort():
+    benchmark = phase("benchmark")
+    manifest = benchmark["motion_manifest"]
+    return {
+        "schema_version": 1, "phase": "cohort", "source_commits": dict(SOURCE_COMMITS),
+        **{key: benchmark[key] for key in ("dataset_sha256", "reproduction_commit", "code_sha256",
+                                         "environment_sha256", "motion_archive_sha256")},
+        "allocation": {**alloc("105"), "allocated_gpus": 0},
+        "sonic_source_sha256": "b6b50d441a4876a382eb3ff33ba940c487d1647230b5ecacaa37cfcf521258da",
+        "motion_archive_bytes": 12_340_000_000, "motion_manifest": manifest,
+        "counts": {"raw": RAW_CLIPS, "after_names": manifest["clips"] + 100, "selected": manifest["clips"]},
+        "verified_checks": sorted(COHORT_CHECKS),
+    }
+
+
 def stages(result):
     return {item["id"]: item["state"] for item in result["phases"]}
 
 
 class PublicPhaseSummaryTest(unittest.TestCase):
+    def test_verified_benchmark_sizing_accounts_for_saves_and_quota(self):
+        benchmark, cohort, smoke = phase("benchmark"), prepared_cohort(), phase("smoke")
+        sizing = plan(benchmark, cohort, smoke)
+        self.assertIs(sizing["approximate"], True)
+        self.assertEqual(sizing["estimated_allocations"], 1)
+        self.assertLess(sizing["time_limit_seconds"], MAX_SECONDS)
+        self.assertEqual(sizing["largest_measured_checkpoint_bytes"], MIB)
+        self.assertGreater(sizing["estimated_additional_ceph_bytes"], 10 * MIB)
+        samples = benchmark["benchmark"]["checkpoint_samples"]
+        for sample in samples:
+            sample["compute_seconds"] = 1000
+        elapsed = sum(sample["compute_seconds"] + sample["checkpoint_seconds"] for sample in samples)
+        benchmark["benchmark"].update(loop_elapsed_seconds=elapsed, end_to_end_iterations_per_second=1200 / elapsed,
+                                      steady_iterations_per_second=0.2, steady_environment_steps_per_second=819.2,
+                                      estimated_320000_iteration_seconds_at_1000_step_saves=1_600_560)
+        long = plan(benchmark, cohort, smoke)
+        self.assertGreater(long["estimated_allocations"], 1)
+        self.assertEqual(long["time_limit_seconds"], MAX_SECONDS)
+        cohort["motion_archive_sha256"] = "9" * 64
+        with self.assertRaisesRegex(ValueError, "not bound to the approved preparation"):
+            plan(benchmark, cohort, smoke)
+
+    def test_approximate_cohort_is_reported_and_binds_the_benchmark(self):
+        smoke = phase("smoke")
+        cohort = prepared_cohort()
+        report = generate(preflight(), FIXTURE_DATE, smoke=smoke, cohort=cohort)
+        self.assertEqual(stages(report)["cohort"], "verified")
+        self.assertIn("approximate Appendix E", report["summary"])
+        self.assertEqual(report["training"]["completedIterations"], 0)
+        self.assertEqual(stages(generate(preflight(), FIXTURE_DATE, smoke=smoke, cohort=cohort,
+                                         benchmark=phase("benchmark")))["benchmark"], "verified")
+        with self.assertRaisesRegex(ValueError, "does not use the audited approximate cohort"):
+            generate(preflight(), FIXTURE_DATE, smoke=smoke, cohort=cohort,
+                     benchmark={**phase("benchmark"), "motion_archive_sha256": "9" * 64})
+        cohort["motion_manifest"]["private_path"] = PRIVATE_MARKER
+        with self.assertRaisesRegex(ValueError, "Unexpected or missing fields for cohort motion provenance"):
+            generate(preflight(), FIXTURE_DATE, smoke=smoke, cohort=cohort)
+
     def test_preflight_only_and_dataset_must_be_independently_checked(self):
         prior = preflight(air=False)
         pending = generate(prior, FIXTURE_DATE)
@@ -227,6 +296,15 @@ class PublicPhaseSummaryTest(unittest.TestCase):
         self.assertIn(model["active"], report["summary"])
         with self.assertRaisesRegex(ValueError, "Invalid active"):
             generate(preflight(), FIXTURE_DATE, **args, registry={**model, "active": "g1-fixture-v1"})
+        listed = {"schema_version": 1, "active": model["active"], "models": [model["active"], "g1-distilled-v1"]}
+        report = generate(preflight(), FIXTURE_DATE, **args, registry=listed)
+        self.assertEqual(stages(report)["release"], "verified")
+        with self.assertRaisesRegex(ValueError, "listed in the model release list"):
+            generate(preflight(), FIXTURE_DATE, **args,
+                     registry={**listed, "active": "g1-unlisted-v1"})
+        with self.assertRaisesRegex(ValueError, "Invalid model release list"):
+            generate(preflight(), FIXTURE_DATE, **args,
+                     registry={**listed, "models": ["g1-distilled-v1", "g1-distilled-v1"]})
 
     def test_refuses_missing_unsupported_or_conflicting_audits(self):
         good = {"smoke": phase("smoke"), "benchmark": phase("benchmark"), "full": phase("full", eval=True)}

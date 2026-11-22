@@ -15,7 +15,7 @@ report_date=$(node -e '
   process.stdout.write(date);
 ' "$report")
 summary_args=(--preflight "$public/reproduction/preflight.json" --date "$report_date" --registry "$public/models/releases.json")
-for phase in smoke benchmark full; do
+for phase in smoke cohort benchmark full; do
   audit="$public/reproduction/$phase-audit.json"
   if [[ -e "$audit" || -L "$audit" ]]; then
     summary_args+=("--$phase" "$audit")

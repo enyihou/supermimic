@@ -19,10 +19,16 @@
       "state": "verified"
     },
     {
-      "detail": "Measure iteration rate and checkpoint size at the planned training scale.",
+      "detail": "142,220 raw motions \u2192 130,137 after name filtering \u2192 129,919 selected and packed at 50 Hz. This is not the authors\u2019 exact cohort.",
+      "id": "cohort",
+      "label": "Approximate Appendix E cohort",
+      "state": "verified"
+    },
+    {
+      "detail": "The separate 1,200-iteration benchmark measured 5.62 steady iterations/s across 4,096 environments, excluding its first window. Input: 129,919 BONES-SEED clips selected by our approximate Appendix E filter.",
       "id": "benchmark",
       "label": "Throughput and checkpoint size",
-      "state": "waiting"
+      "state": "verified"
     },
     {
       "detail": "Full training follows a verified smoke test and benchmark.",
@@ -55,9 +61,102 @@
         }
       ],
       "unit": "MiB"
+    },
+    {
+      "id": "benchmark-iteration-rate",
+      "label": "Benchmark interval throughput",
+      "points": [
+        {
+          "step": 200,
+          "value": 0.49836097789390277
+        },
+        {
+          "step": 400,
+          "value": 5.635668947884419
+        },
+        {
+          "step": 600,
+          "value": 5.631984808815389
+        },
+        {
+          "step": 800,
+          "value": 5.595762263174066
+        },
+        {
+          "step": 1000,
+          "value": 5.623924959375301
+        },
+        {
+          "step": 1200,
+          "value": 5.595974135235096
+        }
+      ],
+      "unit": "iterations/s"
+    },
+    {
+      "id": "benchmark-archive-size",
+      "label": "Benchmark checkpoint size",
+      "points": [
+        {
+          "step": 200,
+          "value": 523.7740392684937
+        },
+        {
+          "step": 400,
+          "value": 899.6516017913818
+        },
+        {
+          "step": 600,
+          "value": 1275.4249649047852
+        },
+        {
+          "step": 800,
+          "value": 1651.514973640442
+        },
+        {
+          "step": 1000,
+          "value": 2026.9632558822632
+        },
+        {
+          "step": 1200,
+          "value": 2028.4790573120117
+        }
+      ],
+      "unit": "MiB"
+    },
+    {
+      "id": "benchmark-checkpoint-time",
+      "label": "Benchmark checkpoint write and transfer time",
+      "points": [
+        {
+          "step": 200,
+          "value": 33.14992999471724
+        },
+        {
+          "step": 400,
+          "value": 48.33260179683566
+        },
+        {
+          "step": 600,
+          "value": 65.16790416277945
+        },
+        {
+          "step": 800,
+          "value": 81.5407263673842
+        },
+        {
+          "step": 1000,
+          "value": 98.36165402643383
+        },
+        {
+          "step": 1200,
+          "value": 99.22574820742011
+        }
+      ],
+      "unit": "s"
     }
   ],
-  "summary": "The official smoke test and its checkpoint passed audit. Full training has not been verified.",
+  "summary": "The official smoke test and throughput benchmark passed audit. Benchmark iterations are not full training.",
   "training": {
     "completedIterations": 0,
     "numEnvironments": 4096,

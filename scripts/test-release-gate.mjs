@@ -35,6 +35,15 @@ test('the unpublished registry contains no model assets', () => sandbox(async ({
   await assert.rejects(verifyRelease(pub), /unexpected or missing files/)
 }))
 
+test('the registry can list independently verified releases', () => sandbox(async ({ pub, registry }) => {
+  await json(registry, { schema_version: 1, active: null, models: [] })
+  assert.equal(await verifyRelease(pub), null)
+  await json(registry, { schema_version: 1, active: 'g1-v1', models: ['g1-v2'] })
+  await assert.rejects(verifyRelease(pub), /Active model must be listed/)
+  await json(registry, { schema_version: 1, active: null, models: ['g1-v1'] })
+  await assert.rejects(verifyRelease(pub), /unexpected or missing files/)
+}))
+
 test('missing registry or active directory is rejected', () => sandbox(async ({ pub, registry }) => {
   await rm(registry)
   await assert.rejects(verifyRelease(pub), /ENOENT/)
@@ -76,13 +85,16 @@ test('full structural audit and runnable assets; invalid provenance and altered 
   await copyFile(join(manifests, 'scene.mjbpack'), join(release, 'scene.mjbpack'))
   await copyFile(mjlabLicense, join(release, 'mjlab-LICENSE.txt'))
   await copyFile(join(source, 'training', 'licenses', 'Unitree-BSD-3-Clause.txt'), join(release, 'Unitree-LICENSE.txt'))
-  await writeFile(join(release, 'ATTRIBUTION.md'), '# SuperMimic browser policy\n\n' +
+  const attribution = '# SuperMimic browser policy\n\n' +
     'Training data includes Motion Data by [Bones Studio](https://bones.studio/). ' +
     'Use of the underlying dataset is subject to the BONES Motion Capture Dataset License Agreement.\n\n' +
     'The scene is compiled from the pinned [mjlab source](https://github.com/HybridRobotics/mjlab_research), ' +
     'licensed under Apache-2.0; see mjlab-LICENSE.txt. The model contains [Unitree G1 robot geometry]' +
     '(https://github.com/unitreerobotics/unitree_mujoco/tree/1eb6642e3f3fdfb7fb13a9794fd6a2dd93ea0e7d/unitree_robots/g1), ' +
-    'BSD-3-Clause; see Unitree-LICENSE.txt.\n')
+    'BSD-3-Clause; see Unitree-LICENSE.txt.\n'
+  const attributionPath = join(release, 'ATTRIBUTION.md')
+  const exactAttribution = attribution + "\nTraining cohort: authors' Appendix E clip list.\n"
+  await writeFile(attributionPath, exactAttribution)
   const artifacts = {}
   for (const name of ['actor.onnx', 'scene.mjbpack', 'mjlab-LICENSE.txt', 'Unitree-LICENSE.txt', 'ATTRIBUTION.md']) {
     const bytes = await readFile(join(release, name))
@@ -119,6 +131,8 @@ test('full structural audit and runnable assets; invalid provenance and altered 
     format: TRAINED_FORMAT, model_id: modelId, task: 'SuperMimic-GenCoord-G1', dataset_sha256: dataset, checkpoint_step: 320_000,
     source_commits: { ...SOURCE_PINS, reproduction }, checkpoint_actor_sha256: sha['actor.pt'],
     checkpoint_world_model_sha256: sha['world_model.pt'], metrics, artifacts,
+    training_cohort: { ...Object.fromEntries(['selection_id', 'approximate', 'allowlist_sha256', 'clips']
+      .map((key) => [key, full.motion_manifest[key]])), motion_archive_sha256: full.motion_archive_sha256 },
     policy: { state_dim: 68, goal_dim: 640, action_dim: 29, goal_frames: 10, goal_stride: 5,
       ...JSON.parse(await readFile(join(manifests, 'parity.json'), 'utf8')) },
     robot: JSON.parse(await readFile(join(manifests, 'robot.json'), 'utf8')),
@@ -187,9 +201,19 @@ test('full structural audit and runnable assets; invalid provenance and altered 
   await assert.rejects(verifyRelease(pub), /exact or approximate cohort/)
   await json(auditFile, { ...full, motion_manifest: { ...full.motion_manifest, fps: 60 } })
   await assert.rejects(verifyRelease(pub), /sample rates/)
-  await json(auditFile, { ...full, motion_manifest: { ...full.motion_manifest, approximate: true,
-    selection_id: 'supermimic-v3-appendix-e-approx-v1' } })
+  const approximate = { approximate: true, selection_id: 'supermimic-v3-appendix-e-approx-v1' }
+  await json(auditFile, { ...full, motion_manifest: { ...full.motion_manifest, ...approximate } })
+  await assert.rejects(verifyRelease(pub), /label and match the verified training cohort/)
+  const approximateAttribution = attribution + "\nTraining cohort: approximate Appendix E selection, not the authors' exact clip list.\n"
+  const approximateManifest = { ...manifest, training_cohort: { ...manifest.training_cohort, ...approximate } }
+  await json(manifestFile, approximateManifest)
+  await assert.rejects(verifyRelease(pub), /expected release notice or training cohort label/)
+  await writeFile(attributionPath, approximateAttribution)
+  await json(manifestFile, { ...approximateManifest, artifacts: { ...artifacts,
+    'ATTRIBUTION.md': { bytes: Buffer.byteLength(approximateAttribution), sha256: hash(approximateAttribution) } } })
   assert.equal(await verifyRelease(pub), modelId)
+  await writeFile(attributionPath, exactAttribution)
+  await json(manifestFile, manifest)
   await json(auditFile, { ...full, held_out_evaluation: { ...full.held_out_evaluation, suite: { ...full.held_out_evaluation.suite, archive_sha256: dataset } } })
   await assert.rejects(verifyRelease(pub), /independent corpus/)
   await json(auditFile, full)

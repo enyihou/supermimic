@@ -12,7 +12,7 @@ The pinned project’s built-in ONNX export is for a **proprioception** actor an
 
 The [BONES-SEED license](https://huggingface.co/datasets/bones-studio/seed/blob/main/LICENSE.md) distinguishes model results from raw data, restricts redistribution of raw or recoverable data, and requires model attribution. Training data includes Motion Data by [Bones Studio](https://bones.studio/). Use of the underlying dataset is subject to the BONES Motion Capture Dataset License Agreement. Confirm release authority under the accepted license before publishing the export. Do not publish `actor.pt`, whole train checkpoints, motion arrays, raw holdout reports, or an export that includes them. A Pages UI gate cannot make assets on Pages private.
 
-The release manifest is part of the model package, not a replacement for the Slurm, checkpoint, and held-out audit. It records model ID, source revisions, dataset SHA-256, checkpoint step, aggregate holdout metrics, and asset hashes. Browser inference must fail visibly on an absent, unsupported, corrupted, or parity-failing package; it must not show the official policy under a trained-model label.
+The release manifest is part of the model package, not a replacement for the Slurm, checkpoint, and held-out audit. It records model ID, source revisions, dataset SHA-256, exact or approximate cohort provenance, checkpoint step, aggregate holdout metrics, and asset hashes. The attribution also states the cohort type. Browser inference must fail visibly on an absent, unsupported, corrupted, or parity-failing package; it must not show the official policy under a trained-model label.
 
 ## Export after the full-run audit
 
@@ -23,7 +23,7 @@ python training/export_browser_policy.py "$PRIVATE_CHECKPOINT" "$PRIVATE_EXPORT_
   --model-id "$MODEL_ID" --checkpoint-step 320000 \
   --expected-actor-sha256 "$ACTOR_SHA256" --expected-world-model-sha256 "$WORLD_MODEL_SHA256" \
   --dataset-sha256 "$DATASET_SHA256" --reproduction-commit "$TRAINING_SOURCE_COMMIT" \
-  --metrics "$PUBLIC_HOLDOUT_METRICS_JSON"
+  --metrics "$PUBLIC_HOLDOUT_METRICS_JSON" --training-audit "$FULL_AUDIT_WITH_HOLDOUT"
 ```
 
 The export contains `actor.onnx`, `scene.mjbpack`, `manifest.json`, and license/attribution files. It exercises the motion encoder against the pinned PyTorch implementation on synthetic observations. The published manifest carries two synthetic action parity vectors; the browser checks these and both artifact hashes before enabling simulation. `scene.mjbpack` is a gzip container for the independently sourced pinned mjlab G1 model and Unitree geometry, with notices alongside the release. Its extension keeps web hosts from automatically decoding it before hash verification. The worker decompresses it locally and obtains actual render meshes and both the pose and controller state from that same scene. The physics and ONNX runtime do not send inputs to a server.
@@ -37,6 +37,12 @@ dataset preflight and the attached held-out audit in
 exact training step, public artifact list and hashes, executable action parity,
 and scene compatibility. It does not replace the private export or Slurm audit
 records and does not authorize distribution of the package by itself.
+
+The comparison route reads the optional `models` array in `models/releases.json`
+when several independently audited experiments are published. Each entry is a
+versioned `models/$MODEL_ID/` package, and its manifest keeps the actor and
+world-model checkpoint hashes together. `active` remains the default release
+for the single-model route.
 
 After reviewing the public-only source diff and pushing the exact source
 revision, publish Pages with `bash scripts/deploy-pages.sh "$SOURCE_COMMIT"`.
