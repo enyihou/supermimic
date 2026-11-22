@@ -4,8 +4,15 @@ const qaModelPattern = /(?:^|-)(?:synthetic|fixture|mock|test|smoke|benchmark|un
 export type ModelChoice = {
   id: string
   label: string
-  kind: 'native' | 'trained'
+  kind: 'original' | 'native' | 'trained'
 }
+
+// This ID cannot collide with a server-provided model release ID.
+export const ORIGINAL_SIMULATION_ID = 'original:simulation'
+export const BUILT_IN_CHOICES: ModelChoice[] = [
+  { id: ORIGINAL_SIMULATION_ID, label: 'Original simulation', kind: 'original' },
+  { id: 'native', label: 'Local illustration', kind: 'native' },
+]
 
 function validModelId(value: unknown): value is string {
   return typeof value === 'string' && modelIdPattern.test(value) && !qaModelPattern.test(value)
@@ -32,7 +39,7 @@ export async function loadModelChoices(base: string): Promise<ModelChoice[]> {
   const extra = 'models' in registry && Array.isArray(registry.models) ? registry.models : []
   const ids = uniqueModelIds([registry.active, ...extra])
   return [
-    { id: 'native', label: 'Local illustration', kind: 'native' },
+    ...BUILT_IN_CHOICES,
     ...ids.map(id => ({ id, label: id, kind: 'trained' as const })),
   ]
 }
