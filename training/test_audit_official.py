@@ -1,15 +1,85 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from air_checkpoint import publish_checkpoint, write_sums
-from audit_official import SOURCE_COMMITS, attach_evaluation, sha256_file, verify_run
+from audit_official import (
+    SLURM_SOURCE, SOURCE_COMMITS, attach_evaluation, capture_slurm, main,
+    normalize_slurm_record, sha256_file, verify_run,
+)
 from evaluate_heldout import MANIFEST, REPOSITORY, REVISION, SEED, SUITE_ID
+
+
+class FileHashTest(unittest.TestCase):
+    def test_streaming_sha256_works_without_python_311_file_digest(self):
+        contents = b"a" * (1024**2) + b"last chunk"
+        with tempfile.TemporaryDirectory() as directory:
+            artifact = Path(directory) / "artifact"
+            artifact.write_bytes(contents)
+            with patch("audit_official.hashlib.file_digest", None, create=True):
+                self.assertEqual(sha256_file(artifact), hashlib.sha256(contents).hexdigest())
+
+
+class SlurmCaptureTest(unittest.TestCase):
+    base = "JobId=1234 JobState=COMPLETED ExitCode=0:0"
+    air = (f"{base} NodeList=gpu02 NumNodes=1 TRES=cpu=16,mem=64G,node=1 "
+           "JOB_GRES=gpu:1 Nodes=gpu02 CPU_IDs=0-15 Mem=65536 GRES= TresPerNode=gres:gpu:1")
+
+    def test_detail_capture_accepts_air_gres_after_node_gpu_teardown(self):
+        with patch("audit_official.subprocess.run", return_value=subprocess.CompletedProcess(
+            [], 0, stdout=self.air + "\n",
+        )) as run:
+            result = capture_slurm("1234")
+        run.assert_called_once_with(["scontrol", "-dd", "-o", "show", "job", "1234"],
+                                    capture_output=True, text=True, check=True, timeout=20)
+        self.assertEqual(result, {"schema_version": 1, "source": SLURM_SOURCE, "job_id": "1234",
+                                  "state": "COMPLETED", "exit_code": "0:0", "allocated_gpus": 1})
+
+    def test_alloc_tres_takes_precedence_and_handles_model_specific_counts(self):
+        for field, count in (("gres/gpu=2,gres/gpu:a800=2", 2),
+                             ("gres/gpu:a800=2,gres/gpu:a100=1", 3), ("cpu=16", 0)):
+            with self.subTest(field=field):
+                self.assertEqual(normalize_slurm_record("1234", f"{self.air} AllocTRES={field}")[
+                    "allocated_gpus"], count)
+
+    def test_never_count_requested_resources_or_jobs_without_allocation(self):
+        for record in (f"{self.base} NodeList=gpu02 TRES=gres/gpu=1 TresPerNode=gres:gpu:1",
+                       self.air.replace("NodeList=gpu02", "NodeList=(null)"),
+                       self.air.replace("JobState=COMPLETED", "JobState=PENDING")):
+            with self.subTest(record=record):
+                self.assertEqual(normalize_slurm_record("1234", record)["allocated_gpus"], 0)
+
+    def test_rejects_ambiguous_wrong_job_and_invalid_records(self):
+        examples = (("9999", self.air, "job ID mismatch"),
+                    ("1234", self.air + "\n" + self.air, "exactly one"),
+                    ("1234", self.air + " JobId=9999", "duplicate field"),
+                    ("1234", self.air.replace("ExitCode=0:0", "ExitCode=0"), "invalid Slurm state or exit code"),
+                    ("1234", self.air.replace("JOB_GRES=gpu:1", "JOB_GRES=gpu:unknown"), "invalid allocated GPU GRES"))
+        for job, record, message in examples:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                normalize_slurm_record(job, record)
+
+    def test_cli_normalizes_saved_terminal_record_without_controller_query(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw, output = (Path(directory) / name for name in ("controller.txt", "slurm.json"))
+            raw.write_text(self.air.replace("COMPLETED ExitCode=0:0", "FAILED ExitCode=1:0") + "\n")
+            argv = ["audit_official.py", "capture-slurm", "1234", "--controller-record", str(raw),
+                    "--output", str(output)]
+            with patch("sys.argv", argv), patch("audit_official.subprocess.run") as query:
+                main()
+            query.assert_not_called()
+            result = json.loads(output.read_text())
+            self.assertEqual((result["state"], result["exit_code"], result["allocated_gpus"]), ("FAILED", "1:0", 1))
+            self.assertNotIn("gpu02", output.read_text())
+            self.assertEqual(output.stat().st_mode & 0o077, 0)
 
 
 class PhaseAuditTest(unittest.TestCase):

@@ -1,0 +1,67 @@
+{
+  "allocations": [
+    {
+      "allocated_gpus": 1,
+      "exit_code": "0:0",
+      "job_id": "33793",
+      "state": "COMPLETED"
+    }
+  ],
+  "checkpoint_archive_bytes": 162651076,
+  "checkpoint_archive_sha256": "c998d7b5e5a2c700321c49a69adfe627bfb200022511d0aa5c5a7ff611048b8f",
+  "checkpoint_artifact_sha256": {
+    "actor.pt": "92fd382f594dce440700d2fd37ff816b6e9d4b11c02522cbabca1e10dfe58b53",
+    "critic.pt": "7e6a8829f9d713eb55dfd824854405e7b553217f6a5644e0c8bdd4013a439cec",
+    "run-config.json": "6f5cdbac8a59a9d1b118f03b3265cdc14a3c0b7d3d95b1187868aa9effc47362",
+    "training_state.pt": "914defa6dbe41e60a526784421e7afbb4147dc9ccf59cea55984ac658a15f786",
+    "world_model.pt": "dabafdc8f21fbe2abd4ce3100b27ec60c5a7fe2d68e956c7e9cd55957a7c7010"
+  },
+  "checkpoint_job_id": "33793",
+  "checkpoint_step": 200,
+  "code_sha256": "5698e6d903d27b3cd895c081cfe8a0a3069bd01d5a95c1e7c7e60c0118627f19",
+  "dataset_sha256": "52580ea8bced72ea9e2ff1e7b68f01c51c7f1099581e9a46b7c87e1dec106d8a",
+  "environment_sha256": "9e8e488d41a6aaed3af99c70372f42164e65505ea2cebd8d01e5090e81cf2172",
+  "held_out_evaluation_verified": false,
+  "motion_archive_sha256": "1ad175160aab9fca81c098092265ae82f123d2e2d210f324becc1f97859233c9",
+  "motion_manifest": {
+    "clips": 64,
+    "clipset_sha256": "3307748d4c1ae9954ef0c6bcd543239c8b0e6ec6e7d0fcde5c8b1445403c1480",
+    "fps": 50,
+    "frames": 26796,
+    "input_fps": 120,
+    "selection": "archive-order-smoke",
+    "sha256": "180218a5a7c366fc2f6810b09867b8424ee6eed918bfdd75dbd942aa48a443be"
+  },
+  "motions": {
+    "clips": 64,
+    "fps": 50.0,
+    "frames": 26796
+  },
+  "num_envs": 256,
+  "outputs_archive_sha256": "31b14035c0319c4162dcc36f3311b8af12a5db44440f045a5f232df69ee046d7",
+  "phase": "smoke",
+  "reproduction_commit": "f17e90729f959bcd9f5e4c4cd428cab5dd307143",
+  "retained_checkpoints": [
+    {
+      "archive_bytes": 162651076,
+      "archive_sha256": "c998d7b5e5a2c700321c49a69adfe627bfb200022511d0aa5c5a7ff611048b8f",
+      "step": 200
+    }
+  ],
+  "schema_version": 1,
+  "source_commits": {
+    "mjlab_research": "379c55e88b1dec73f93943e524a879b2ebbf45c5",
+    "supermimic": "5fb92297ab4fe3d86629d9f0c635334791bb0d5f"
+  },
+  "verified_checks": [
+    "slurm_terminal_state",
+    "job_status",
+    "success_marker",
+    "source_pins",
+    "dataset_checksum",
+    "packed_motion_checksum",
+    "target_step",
+    "checkpoint_archive_integrity",
+    "milestone_retention"
+  ]
+}

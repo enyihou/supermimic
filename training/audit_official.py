@@ -24,6 +24,8 @@ JOB_ID = re.compile(r"[1-9][0-9]*")
 CHECKPOINT_FILES = {"actor.pt", "world_model.pt", "training_state.pt", "run-config.json"}
 OPTIONAL_CHECKPOINT_FILES = {"critic.pt"}
 MAX_SMALL_FILE = 4 * 1024**2
+SLURM_SOURCE = "scontrol -dd -o show job"
+LEGACY_SLURM_SOURCE = "scontrol show job -o"
 
 
 def require(condition: bool, message: str) -> None:
@@ -48,8 +50,12 @@ def atomic_json(path: Path, value: dict) -> None:
 
 
 def sha256_file(path: Path) -> str:
+    # The gpu01 login host has Python 3.10; hashlib.file_digest arrived in 3.11.
+    digest = hashlib.sha256()
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        for chunk in iter(lambda: stream.read(1024**2), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def parse_fields(data: str) -> dict[str, str]:
@@ -157,21 +163,51 @@ def verify_checkpoint(path: Path) -> tuple[dict, dict, dict[str, str], str]:
     return manifest, json.loads(contents["run-config.json"]), internal, outer["checkpoint.tar.gz"]
 
 
+def normalize_slurm_record(job_id: str, record: str) -> dict:
+    """Reduce one live or privately saved detailed controller record to audit fields."""
+    require(JOB_ID.fullmatch(job_id) is not None, "expected a numeric Slurm job ID")
+    record = record.strip()
+    require(record.startswith("JobId=") and len(record.splitlines()) == 1,
+            "expected exactly one Slurm controller record")
+    pairs = re.findall(r"(?:^|\s)(JobId|JobState|ExitCode|AllocTRES|NodeList|JOB_GRES)=([^\s]+)", record)
+    fields = dict(pairs)
+    require(len(fields) == len(pairs), "duplicate field in Slurm controller record")
+    require(fields.get("JobId") == job_id, "Slurm controller job ID mismatch")
+    state, exit_code = fields.get("JobState", ""), fields.get("ExitCode", "")
+    require(re.fullmatch(r"[A-Z_][A-Z_0-9]*\+?", state) is not None
+            and re.fullmatch(r"[0-9]+:[0-9]+", exit_code) is not None,
+            "missing or invalid Slurm state or exit code")
+    no_allocation = {"", "(null)", "None", "N/A", "(none)"}
+    allocated = fields.get("AllocTRES", "")
+    gpu = 0
+    if allocated not in no_allocation:
+        counts = {}
+        for part in allocated.split(","):
+            name, sep, count = part.partition("=")
+            if name == "gres/gpu" or name.startswith("gres/gpu:"):
+                require(sep and count.isdecimal() and name not in counts, "invalid allocated GPU TRES")
+                counts[name] = int(count)
+        gpu = counts["gres/gpu"] if "gres/gpu" in counts else sum(counts.values())
+    elif state.rstrip("+") != "PENDING" and fields.get("NodeList", "") not in no_allocation:
+        # Older Slurm emits JOB_GRES from the actual job resources in -dd
+        # output. Its terminal per-node GRES can be empty after teardown.
+        # TRES can mean requested resources; TresPerNode is always a request.
+        for part in fields.get("JOB_GRES", "").split(","):
+            if part == "gpu" or part.startswith("gpu:"):
+                count = re.fullmatch(r"gpu:(?:[A-Za-z0-9_.-]+:)?([0-9]+)", part)
+                require(count is not None, "invalid allocated GPU GRES")
+                gpu += int(count[1])
+    # Capture evidence from authoritative controller and discard user, paths and node names.
+    return {"schema_version": 1, "source": SLURM_SOURCE, "job_id": job_id,
+            "state": state, "exit_code": exit_code,
+            "allocated_gpus": gpu}
+
+
 def capture_slurm(job_id: str) -> dict:
     require(JOB_ID.fullmatch(job_id) is not None, "expected a numeric Slurm job ID")
-    record = subprocess.run(["scontrol", "-o", "show", "job", job_id],
-                            capture_output=True, text=True, check=True, timeout=20).stdout.strip()
-    require("\n" not in record, "expected exactly one Slurm controller record")
-    fields = dict(re.findall(r"(?:^|\s)(JobId|JobState|ExitCode|AllocTRES)=([^\s]+)", record))
-    require(fields.get("JobId") == job_id, "Slurm controller job ID mismatch")
-    resources = dict(part.split("=", 1) for part in fields.get("AllocTRES", "").split(",")
-                     if "=" in part)
-    gpu = (int(resources["gres/gpu"]) if "gres/gpu" in resources else
-           sum(int(count) for name, count in resources.items() if name.startswith("gres/gpu:")))
-    # Capture evidence from authoritative controller and discard user, paths and node names.
-    return {"schema_version": 1, "source": "scontrol show job -o", "job_id": job_id,
-            "state": fields["JobState"], "exit_code": fields["ExitCode"],
-            "allocated_gpus": gpu}
+    record = subprocess.run(["scontrol", "-dd", "-o", "show", "job", job_id],
+                            capture_output=True, text=True, check=True, timeout=20).stdout
+    return normalize_slurm_record(job_id, record)
 
 
 def verify_success(attempt: Path, job_id: str, slurm_record: Path,
@@ -179,7 +215,7 @@ def verify_success(attempt: Path, job_id: str, slurm_record: Path,
                    ) -> tuple[dict[str, bytes], dict[str, str]]:
     require(JOB_ID.fullmatch(job_id) is not None, "expected a numeric Slurm job ID")
     slurm = json.loads(slurm_record.read_text(encoding="utf-8"))
-    require(slurm.get("source") == "scontrol show job -o" and slurm.get("job_id") == job_id
+    require(slurm.get("source") in (SLURM_SOURCE, LEGACY_SLURM_SOURCE) and slurm.get("job_id") == job_id
             and slurm.get("allocated_gpus") == 1 and slurm.get("state") == "COMPLETED"
             and slurm.get("exit_code") == "0:0", "one-GPU Slurm completion not verified")
     require((attempt / "SUCCESS").is_file(), "private attempt lacks SUCCESS marker")
@@ -423,6 +459,8 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     capture = commands.add_parser("capture-slurm", help="save controller evidence on gpu01")
     capture.add_argument("job_id")
+    capture.add_argument("--controller-record", type=Path,
+                         help="use privately saved stdout of scontrol -dd -o show job instead of querying Slurm")
     capture.add_argument("--output", type=Path, required=True)
     verify = commands.add_parser("verify", help="verify checkpoint and successful Slurm attempt")
     verify.add_argument("--run", type=Path, required=True)
@@ -447,7 +485,8 @@ def main() -> None:
     args = parser.parse_args()
     try:
         if args.command == "capture-slurm":
-            result = capture_slurm(args.job_id)
+            result = (capture_slurm(args.job_id) if args.controller_record is None else
+                      normalize_slurm_record(args.job_id, args.controller_record.read_text(encoding="utf-8")))
         elif args.command == "verify":
             result = verify_run(args)
         else:

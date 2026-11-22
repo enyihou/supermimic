@@ -115,7 +115,16 @@ Monitor `squeue`, a concise training log tail, and published checkpoint
 manifests. Save the terminal Slurm record promptly; controller records age out.
 `python3 training/watch_slurm.py "$JOB_ID" "$PRIVATE_SLURM_JSON"` can be run
 detached on gpu01 to capture the exact job's terminal controller state
-before it expires. An observation timeout does not authorize a restart.
+before it expires. This uses detailed `scontrol` output so Slurm 21.08's actual
+GPU allocation is recorded, not inferred from its GPU request. An observation
+timeout does not authorize a restart. For the smoke, `finish_air_smoke.sh`
+can run detached with the job-visible project, run ID, job ID, and an owner-only
+login-local state directory containing `job-id` and `inputs.txt` (the submitted
+`dataset_sha256`, `motion_sha256`, `code_sha256`, `environment_sha256` and
+`reproduction_commit` as `key=value`). It captures terminal evidence, backs up
+the attempt, and verifies a successful smoke before public review. If the
+worker stops, restart it with the same arguments and existing state; do not
+submit again to replace a worker.
 Success requires a matching `COMPLETED`/`0:0` record, verified archive hashes,
 the exact target in the latest checkpoint, and the attempt's `SUCCESS` and
 `job-status.txt`. See [held-out evaluation and audits](HELD_OUT_EVAL.md) and

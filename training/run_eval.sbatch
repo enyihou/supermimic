@@ -19,6 +19,8 @@ export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE VIRTUAL_ENV BASH_ENV ENV LD_PRELOAD
 unset HF_TOKEN HUGGING_FACE_HUB_TOKEN WANDB_API_KEY
 export WANDB_MODE=disabled HF_HUB_OFFLINE=1 PYTHONNOUSERSITE=1 SLURM_EXPORT_ENV=ALL
+# Rollouts collect physics metrics without creating an OpenGL context.
+export MUJOCO_GL=disable
 for variable in ${!CONDA_@} ${!_CONDA_@}; do unset "$variable"; done
 unset _CE_CONDA _CE_M
 
